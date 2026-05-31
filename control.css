@@ -1,0 +1,8 @@
+/* Carte de contrôle avsync (Mire synchro A/V), montée dans le shell Sources (I/O). */
+.avs-ctl { display:flex; flex-direction:column; gap:10px; }
+.avs-state { display:flex; flex-direction:column; gap:3px; }
+.avs-row { display:flex; justify-content:space-between; gap:12px; font-size:0.88em; }
+.avs-row > span:first-child { color:var(--text-muted); }
+.avs-row > span:last-child  { font-family:var(--font-mono); }
+.avs-row.meta { color:var(--text-muted); font-style:italic; }
+.avs-actions { display:flex; gap:8px; }
