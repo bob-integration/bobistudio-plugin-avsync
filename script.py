@@ -31,7 +31,13 @@ FPS    = int(round(float(CONFIG.get("fps") or 25))) or 25
 BEAT_SEC = float(CONFIG.get("beat_sec") or 1.0) or 1.0
 FLASH_MS = int(CONFIG.get("flash_ms") or 60)
 TONE_HZ  = float(CONFIG.get("tone_hz") or 1000.0)
-SHOW_BRAND  = bool(CONFIG.get("show_brand", True))
+def _as_bool(v, default=False):
+    if v is None:
+        return default
+    if isinstance(v, str):
+        return v.strip().lower() in ("1", "true", "yes", "on")
+    return bool(v)
+SHOW_BRAND  = _as_bool(CONFIG.get("show_brand"), default=True)
 CUSTOM_TEXT = str(CONFIG.get("custom_text") or "")
 
 BRAND_NAME = str(CONFIG.get("brand_system_name") or "")
