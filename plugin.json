@@ -1,32 +1,140 @@
 {
   "type": "avsync",
   "label": "Mire synchro A/V",
-  "badge": { "label": "AV Sync", "class": "mode-corrector" },
-  "version": "0.2.0",
+  "badge": {
+    "label": "AV Sync",
+    "class": "mode-corrector"
+  },
+  "version": "0.3.1",
   "description": "Générateur de test de synchronisation image/son : flash plein écran + bip synchrones, compteur, barre de balayage, et overlay personnalisable (logo entreprise, nom du système, localisation, format vidéo, texte libre).",
-  "nav": { "section": "sources", "label": "Sources", "route": "/receiver_2110", "order": 30 },
-  "ui": { "control_html": "control.html", "control_js": "control.js", "control_css": "control.css" },
+  "nav": {
+    "section": "sources",
+    "label": "Sources",
+    "route": "/receiver_2110",
+    "order": 30
+  },
+  "ui": {
+    "control_html": "control.html",
+    "control_js": "control.js",
+    "control_css": "control.css"
+  },
   "script_template": "script.py",
   "brand": true,
   "deploy_defaults": {
-    "width": 1280, "height": 720, "fps": 25,
-    "beat_sec": 1.0, "flash_ms": 40, "tone_hz": 1000,
-    "show_brand": true, "custom_text": ""
+    "width": 1280,
+    "height": 720,
+    "fps": 25,
+    "beat_sec": 1.0,
+    "flash_ms": 40,
+    "tone_hz": 1000,
+    "show_brand": true,
+    "custom_text": ""
   },
   "config_schema": [
-    { "key": "beat_sec",   "type": "number",   "label": "Battement (s)",      "min": 0.2, "max": 10,   "step": 0.1, "default": 1.0 },
-    { "key": "flash_ms",   "type": "number",   "label": "Durée flash + bip (ms)", "min": 10, "max": 500, "default": 40 },
-    { "key": "tone_hz",    "type": "number",   "label": "Fréquence bip (Hz)", "min": 100, "max": 12000, "default": 1000 },
-    { "key": "custom_text","type": "text",     "label": "Texte personnalisé", "placeholder": "ex. Banc d'essai — Régie A" },
-    { "key": "show_brand", "type": "checkbox", "label": "Afficher la marque (logo + nom + lieu)", "default": true }
+    {
+      "key": "width",
+      "type": "number",
+      "label": "Largeur (px)",
+      "min": 320,
+      "max": 3840,
+      "step": 2,
+      "default": 1280
+    },
+    {
+      "key": "height",
+      "type": "number",
+      "label": "Hauteur (px)",
+      "min": 180,
+      "max": 2160,
+      "step": 2,
+      "default": 720
+    },
+    {
+      "key": "fps",
+      "type": "number",
+      "label": "Fréquence (fps)",
+      "min": 1,
+      "max": 60,
+      "default": 25
+    },
+    {
+      "key": "chroma",
+      "type": "select",
+      "label": "Chroma",
+      "default": "422",
+      "options": [
+        {
+          "value": "420",
+          "label": "YUV 4:2:0"
+        },
+        {
+          "value": "422",
+          "label": "YUV 4:2:2"
+        },
+        {
+          "value": "444",
+          "label": "YUV 4:4:4"
+        }
+      ]
+    },
+    {
+      "key": "beat_sec",
+      "type": "number",
+      "label": "Battement (s)",
+      "min": 0.2,
+      "max": 10,
+      "step": 0.1,
+      "default": 1.0
+    },
+    {
+      "key": "flash_ms",
+      "type": "number",
+      "label": "Durée flash + bip (ms)",
+      "min": 10,
+      "max": 500,
+      "default": 40
+    },
+    {
+      "key": "tone_hz",
+      "type": "number",
+      "label": "Fréquence bip (Hz)",
+      "min": 100,
+      "max": 12000,
+      "default": 1000
+    },
+    {
+      "key": "custom_text",
+      "type": "text",
+      "label": "Texte personnalisé",
+      "placeholder": "ex. Banc d'essai — Régie A"
+    },
+    {
+      "key": "show_brand",
+      "type": "checkbox",
+      "label": "Afficher la marque (logo + nom + lieu)",
+      "default": true
+    }
   ],
   "wiring": {
     "produces": [
-      { "essence": "video", "shm": "{hostname}",        "label": "Vidéo" },
-      { "essence": "audio", "shm": "{hostname}_audio",  "label": "Audio" }
+      {
+        "essence": "video",
+        "shm": "{hostname}",
+        "label": "Vidéo"
+      },
+      {
+        "essence": "audio",
+        "shm": "{hostname}_audio",
+        "label": "Audio"
+      }
     ],
     "consumes": [],
     "mode": "redeploy"
   },
-  "control": { "endpoints": ["/state"] }
+  "control": {
+    "endpoints": [
+      "/state",
+      "/config"
+    ]
+  }
 }

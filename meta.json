@@ -1,8 +1,11 @@
 {
-  "published_at": "2026-05-30",
-  "changes": [
-    "Mire de synchronisation A/V : flash plein écran + bip synchrones, compteur, barre de balayage et overlay personnalisable."
-  ],
-  "fixes": [],
-  "known_bugs": []
+  "version": "0.3.1",
+  "date": "2026-05-31",
+  "changes": {
+    "Nouveautés": [
+      "Ring buffer vidéo/audio configurable depuis Réglages → MXL (shm_video_ring / shm_audio_ring)."
+    ],
+    "Corrections": [],
+    "Bugs connus": []
+  }
 }

@@ -1,8 +1,319 @@
-/* Carte de contrôle avsync (Mire synchro A/V), montée dans le shell Sources (I/O). */
-.avs-ctl { display:flex; flex-direction:column; gap:10px; }
-.avs-state { display:flex; flex-direction:column; gap:3px; }
-.avs-row { display:flex; justify-content:space-between; gap:12px; font-size:0.88em; }
-.avs-row > span:first-child { color:var(--text-muted); }
-.avs-row > span:last-child  { font-family:var(--font-mono); }
-.avs-row.meta { color:var(--text-muted); font-style:italic; }
-.avs-actions { display:flex; gap:8px; }
+/* ────────────────────────────────────────────────────────────────────────────
+   Carte de contrôle avsync (Mire synchro A/V) — shell Sources (I/O).
+   Tokens exclusivement via var(--*) : trois thèmes sans surcharge.
+   ────────────────────────────────────────────────────────────────────────────*/
+
+.avs {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* ─── Live state ─────────────────────────────────────────────────────────── */
+.avs-live {
+  padding: 10px 0 12px;
+  border-bottom: 1px solid var(--border-soft);
+  margin-bottom: 10px;
+}
+
+.avs-fps-row {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  margin-bottom: 5px;
+}
+
+.avs-fps-val {
+  font-family: var(--font-mono);
+  font-size: 1.7em;
+  font-weight: 600;
+  color: var(--status-running-fg);
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
+.avs-fps-unit {
+  font-family: var(--font-mono);
+  font-size: 0.78em;
+  color: var(--text-muted);
+  margin-right: 8px;
+}
+
+.avs-live-fmt {
+  font-family: var(--font-mono);
+  font-size: 0.82em;
+  color: var(--text-muted);
+}
+
+.avs-params-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.avs-param-chip {
+  font-family: var(--font-mono);
+  font-size: 0.78em;
+  color: var(--text-muted);
+  background: var(--bg-input);
+  border: 1px solid var(--border-soft);
+  border-radius: 3px;
+  padding: 2px 6px;
+  white-space: nowrap;
+}
+
+.avs-param-chip [data-live],
+.avs-param-chip {
+  color: var(--text);
+}
+
+/* ─── Sections ───────────────────────────────────────────────────────────── */
+.avs-sec {
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.avs-sec:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.avs-sec-hd {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.avs-sec-lbl {
+  font-size: 0.74em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.avs-sec-note {
+  font-size: 0.74em;
+  color: var(--text-muted);
+  opacity: 0.7;
+  font-style: italic;
+  flex: 1;
+}
+
+.avs-sec-hd .btn {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* ─── Champs ─────────────────────────────────────────────────────────────── */
+.avs-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.avs-row-col {
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.avs-x {
+  font-size: 0.78em;
+  color: var(--text-muted);
+  margin: 0 -2px;
+  align-self: flex-end;
+  padding-bottom: 6px;
+}
+
+.avs-f {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.avs-f > span:first-child {
+  font-size: 0.72em;
+  color: var(--text-muted);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.avs-f input[type="number"],
+.avs-f select {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  background: var(--bg-input);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small, 4px);
+  padding: 4px 7px;
+  width: 68px;
+  transition: border-color 120ms;
+}
+
+.avs-f select {
+  width: auto;
+  min-width: 76px;
+}
+
+.avs-f input[type="text"] {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  background: var(--bg-input);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small, 4px);
+  padding: 4px 7px;
+  width: 100%;
+  transition: border-color 120ms;
+}
+
+.avs-f input:focus,
+.avs-f select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* Unité après l'input (s / ms / Hz) */
+.avs-unit {
+  font-family: var(--font-mono);
+  font-size: 0.72em;
+  color: var(--text-muted);
+  align-self: flex-end;
+  padding-bottom: 6px;
+  margin-left: -5px;
+}
+
+/* Preset format : assez large pour le libellé */
+.avs-f-preset select {
+  min-width: 170px;
+  width: auto;
+}
+
+/* Checkbox inline */
+.avs-f-check {
+  flex-direction: row;
+  align-items: center;
+  gap: 7px;
+}
+
+.avs-f-check > span:first-child {
+  display: none; /* le span est le label, remplacé par l'ordre DOM */
+}
+
+.avs-f-check input[type="checkbox"] {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.avs-f-check > span:last-child {
+  font-size: 0.83em;
+  color: var(--text);
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  cursor: pointer;
+}
+
+/* Texte libre : pleine largeur */
+.avs-f-full {
+  width: 100%;
+}
+
+.avs-f-sel select {
+  min-width: 80px;
+}
+
+/* ─── Rotatifs ───────────────────────────────────────────────────────────── */
+.avs-knobs {
+  display: flex;
+  gap: 20px;
+  padding: 4px 0 2px;
+}
+
+.avs-knob-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  min-width: 54px;
+}
+
+.avs-knob {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  cursor: ns-resize;
+  touch-action: none;
+  flex-shrink: 0;
+  transition: border-color 120ms;
+}
+
+.avs-knob:hover { border-color: var(--text-muted); }
+.avs-knob:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.avs-knob-dial {
+  position: absolute;
+  left: calc(50% - 1.5px);
+  top: 4px;
+  width: 3px;
+  height: 11px;
+  background: var(--accent);
+  border-radius: 2px;
+  transform-origin: 50% calc(18px - 4px);
+}
+
+.avs-knob-val {
+  font-family: var(--font-mono);
+  font-size: 0.84em;
+  color: var(--text-strong);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.avs-knob-unit {
+  font-size: 0.85em;
+  color: var(--text-muted);
+}
+
+.avs-knob-lbl {
+  font-size: 0.7em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+/* ─── Switch iOS (réutilise palette-field-check de base.css) ─────────────── */
+.avs-switch {
+  margin-bottom: 0;
+}
+
+/* ─── Feedback inline ────────────────────────────────────────────────────── */
+.avs-fb {
+  font-family: var(--font-mono);
+  font-size: 0.74em;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  transition: color 120ms;
+  flex: 1;
+  text-align: right;
+}
+
+.avs-fb.ok  { color: var(--status-running-fg); }
+.avs-fb.err { color: var(--status-stopped-fg); }

@@ -49,7 +49,7 @@ PIX_FMT = {{"420": "yuv420p", "422": "yuv422p", "444": "yuv444p"}}.get(CHROMA, "
 UV_W = WIDTH // _CW
 UV_H = HEIGHT // _CH
 V_HEADER_SIZE = 64
-V_RING_SIZE   = 10
+V_RING_SIZE   = CONFIG.get("shm_video_ring", 10)
 Y_SIZE        = WIDTH * HEIGHT
 UV_SIZE       = UV_W * UV_H
 V_FRAME_SIZE  = Y_SIZE + 2 * UV_SIZE
@@ -58,7 +58,7 @@ V_TOTAL_SIZE  = V_HEADER_SIZE + V_RING_SIZE * V_FRAME_SIZE
 A_SAMPLE_RATE = 48000
 A_CHANNELS    = 8
 A_HEADER_SIZE = 64
-A_RING_SIZE   = 100
+A_RING_SIZE   = CONFIG.get("shm_audio_ring", 100)
 A_CHUNK_SIZE  = (A_SAMPLE_RATE // 1000) * A_CHANNELS * 3   # 1152 (1 ms s24le 8ch)
 A_TOTAL_SIZE  = A_HEADER_SIZE + A_RING_SIZE * A_CHUNK_SIZE
 
@@ -144,8 +144,10 @@ def _load_logo():
 LOGO = _load_logo()
 
 
-# ─── overlay STATIQUE (logo + textes marque/format/perso), composé une fois ──
-def _build_static():
+# ─── overlay (logo + textes marque/format/perso), composé à la demande ──────
+def _build_imgs(show_brand, custom_text):
+    """Construit (img_black, img_white) avec l'overlay courant. Appelé au boot et
+    à chaud quand show_brand ou custom_text change."""
     ov = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
     d = ImageDraw.Draw(ov)
     tx = 16
@@ -153,29 +155,27 @@ def _build_static():
         ov.alpha_composite(LOGO, (16, 16))
         tx = 16 + LOGO.width + 14
     yy = 18
-    if SHOW_BRAND:
+    if show_brand:
         for ln in (BRAND_NAME, BRAND_LOC):
             if ln:
                 d.text((tx, yy), ln, font=FONT_MED, fill=(255, 255, 255, 235))
                 yy += _tsize(ln, FONT_MED)[1] + 6
-    # format vidéo : en bas à gauche
     fh = _tsize(FORMAT_STR, FONT_MED)[1]
     d.text((16, HEIGHT - fh - 16), FORMAT_STR, font=FONT_MED, fill=(170, 215, 255, 235))
-    # texte personnalisé : en bas, centré
-    if CUSTOM_TEXT:
-        cw, ch = _tsize(CUSTOM_TEXT, FONT_MED)
-        d.text(((WIDTH - cw) // 2, HEIGHT - ch - 16), CUSTOM_TEXT, font=FONT_MED, fill=(255, 240, 170, 235))
-    return ov
+    if custom_text:
+        cw, ch = _tsize(custom_text, FONT_MED)
+        d.text(((WIDTH - cw) // 2, HEIGHT - ch - 16), custom_text, font=FONT_MED, fill=(255, 240, 170, 235))
+    blk = Image.alpha_composite(Image.new("RGBA", (WIDTH, HEIGHT), (8, 8, 8, 255)), ov).convert("RGB")
+    wht = Image.alpha_composite(Image.new("RGBA", (WIDTH, HEIGHT), (236, 236, 236, 255)), ov).convert("RGB")
+    return blk, wht
 
-# Fonds pré-composés (noir + flash blanc) AVEC l'overlay statique → par frame on ne
-# fait que copier + dessiner la barre + le compteur (peu de coût ; le YUV reste le gros).
-_OV = _build_static()
-IMG_BLACK = Image.alpha_composite(Image.new("RGBA", (WIDTH, HEIGHT), (8, 8, 8, 255)), _OV).convert("RGB")
-IMG_WHITE = Image.alpha_composite(Image.new("RGBA", (WIDTH, HEIGHT), (236, 236, 236, 255)), _OV).convert("RGB")
+IMG_BLACK, IMG_WHITE = _build_imgs(SHOW_BRAND, CUSTOM_TEXT)
 
 
-def _frame_bytes(flash, sec, fis, bar_x):
-    im = (IMG_WHITE if flash else IMG_BLACK).copy()
+def _frame_bytes(flash, sec, fis, bar_x, img_black=None, img_white=None):
+    if img_black is None: img_black = IMG_BLACK
+    if img_white is None: img_white = IMG_WHITE
+    im = (img_white if flash else img_black).copy()
     d = ImageDraw.Draw(im)
     # barre de balayage verticale
     bw = max(2, WIDTH // 200)
@@ -189,11 +189,12 @@ def _frame_bytes(flash, sec, fis, bar_x):
 
 
 # ─── bip audio : chunks de 1 ms pré-calculés (sinus s24le 8ch) ───────────────
-def _beep_chunks():
-    n_ms = max(1, int(FLASH_MS))
+def _beep_chunks(flash_ms=None, tone_hz=None):
+    n_ms = max(1, int(flash_ms if flash_ms is not None else FLASH_MS))
+    hz   = float(tone_hz if tone_hz is not None else TONE_HZ)
     nsamp = (A_SAMPLE_RATE // 1000) * n_ms
     t = np.arange(nsamp, dtype=np.float64) / A_SAMPLE_RATE
-    w = (np.sin(2 * np.pi * TONE_HZ * t) * 0.5 * (2 ** 23 - 1)).astype("<i4")
+    w = (np.sin(2 * np.pi * hz * t) * 0.5 * (2 ** 23 - 1)).astype("<i4")
     mono = w.view(np.uint8).reshape(-1, 4)[:, :3]                    # (nsamp,3) LE 24-bit
     inter = np.tile(mono[:, None, :], (1, A_CHANNELS, 1)).reshape(-1)
     b = inter.tobytes()
@@ -202,6 +203,26 @@ def _beep_chunks():
 BEEP = _beep_chunks()
 SILENCE = bytes(A_CHUNK_SIZE)
 BEAT_MS = max(1, int(round(BEAT_SEC * 1000)))
+
+# ─── état live : params soft applicables à chaud via POST :8082/config ─────
+_live_lock = threading.Lock()
+_live = {{
+    "beat_sec": BEAT_SEC, "flash_ms": int(FLASH_MS), "tone_hz": float(TONE_HZ),
+    "show_brand": SHOW_BRAND, "custom_text": CUSTOM_TEXT,
+    "beep": BEEP, "beat_ms": BEAT_MS, "img_black": IMG_BLACK, "img_white": IMG_WHITE,
+}}
+
+def _apply_live(patch):
+    """Met à jour les params soft à chaud et recompute les données dérivées."""
+    with _live_lock:
+        _live.update(patch)
+        if "beat_sec" in patch:
+            _live["beat_ms"] = max(1, int(round(_live["beat_sec"] * 1000)))
+        if "flash_ms" in patch or "tone_hz" in patch:
+            _live["beep"] = _beep_chunks(_live["flash_ms"], _live["tone_hz"])
+        if "show_brand" in patch or "custom_text" in patch:
+            blk, wht = _build_imgs(_live["show_brand"], _live["custom_text"])
+            _live["img_black"] = blk; _live["img_white"] = wht
 
 
 # ─── threads de génération ───────────────────────────────────────────────────
@@ -215,13 +236,16 @@ def video_feeder():
         now = time.monotonic()
         if now < next_t:
             time.sleep(next_t - now); now = time.monotonic()
+        with _live_lock:
+            beat_sec = _live["beat_sec"]; flash_ms = _live["flash_ms"]
+            img_b = _live["img_black"];   img_w = _live["img_white"]
         el = now - T0
-        phase = el % BEAT_SEC
-        flash = phase < (FLASH_MS / 1000.0)
+        phase = el % beat_sec
+        flash = phase < (flash_ms / 1000.0)
         sec = int(el)
         fis = int((el - sec) * FPS)
-        bar_x = int((phase / BEAT_SEC) * (WIDTH - 1))
-        _write_video(shm, _frame_bytes(flash, sec, fis, bar_x), idx); idx += 1
+        bar_x = int((phase / beat_sec) * (WIDTH - 1))
+        _write_video(shm, _frame_bytes(flash, sec, fis, bar_x, img_b, img_w), idx); idx += 1
         win_cnt += 1
         _e = time.time() - win_start
         if _e >= 1.0:
@@ -238,10 +262,12 @@ def audio_feeder():
     written_ms = 0
     while True:
         due = int((time.monotonic() - T0) * 1000)
+        with _live_lock:
+            beat_ms = _live["beat_ms"]; beep = _live["beep"]
         guard = 0
         while written_ms < due and guard < 2000:
-            phase_ms = written_ms % BEAT_MS
-            chunk = BEEP[phase_ms] if phase_ms < len(BEEP) else SILENCE
+            phase_ms = written_ms % beat_ms
+            chunk = beep[phase_ms] if phase_ms < len(beep) else SILENCE
             _write_audio(shm, chunk, ci); ci += 1; written_ms += 1; guard += 1
         time.sleep(0.003)
 
@@ -257,23 +283,56 @@ class MetricsHandler(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
 
 class ControlHandler(BaseHTTPRequestHandler):
+    def _send_json(self, code, obj):
+        body = json.dumps(obj).encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_GET(self):
         if self.path == "/state":
             with metrics_lock: m = dict(metrics)
+            with _live_lock: lv = dict(_live)
             s = {{"video_shm": VIDEO_SHM, "audio_shm": AUDIO_SHM,
-                  "width": WIDTH, "height": HEIGHT, "fps": FPS, "format": FORMAT_STR,
-                  "beat_sec": BEAT_SEC, "flash_ms": FLASH_MS, "tone_hz": TONE_HZ,
-                  "show_brand": SHOW_BRAND, "custom_text": CUSTOM_TEXT,
+                  "width": WIDTH, "height": HEIGHT, "fps": FPS, "chroma": CHROMA,
+                  "format": FORMAT_STR,
+                  "beat_sec": lv["beat_sec"], "flash_ms": lv["flash_ms"],
+                  "tone_hz": lv["tone_hz"], "show_brand": lv["show_brand"],
+                  "custom_text": lv["custom_text"],
                   "brand_system_name": BRAND_NAME, "brand_location": BRAND_LOC,
                   "has_logo": LOGO is not None,
                   "fps_live": m.get("fps"), "frame_index": m.get("frame_index"),
                   "plugin_version": PLUGIN_VERSION}}
-            body = json.dumps(s).encode()
-            self.send_response(200); self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(body))); self.end_headers()
-            self.wfile.write(body)
+            self._send_json(200, s)
         else:
             self.send_response(404); self.end_headers()
+
+    def do_POST(self):
+        if self.path != "/config":
+            self.send_response(404); self.end_headers(); return
+        n = int(self.headers.get("Content-Length", 0))
+        try:
+            body = json.loads(self.rfile.read(n)) if n else {{}}
+        except Exception:
+            self._send_json(400, {{"error": "JSON invalide"}}); return
+        _validators = {{
+            "beat_sec": lambda v: float(v),
+            "flash_ms": lambda v: int(v),
+            "tone_hz":  lambda v: float(v),
+            "show_brand": lambda v: bool(v),
+            "custom_text": lambda v: str(v),
+        }}
+        patch = {{}}
+        for k, cast in _validators.items():
+            if k in body:
+                try: patch[k] = cast(body[k])
+                except Exception: pass
+        if patch:
+            _apply_live(patch)
+        self._send_json(200, {{"ok": True, "applied": list(patch.keys())}})
+
     def log_message(self, *a): pass
 
 
