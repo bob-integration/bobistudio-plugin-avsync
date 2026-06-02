@@ -1,3 +1,8 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 BOBI SAS, France
+# Auteur : Cyril Mazouer, pour le compte de BOBI SAS
+# Distribué sous licence GNU GPL v3 (ou ultérieure) ; voir le fichier LICENSE.
+
 _FORMAT_KEYS = frozenset(("width", "height", "fps", "chroma"))
 _SOFT_KEYS   = frozenset(("beat_sec", "flash_ms", "tone_hz", "show_brand", "custom_text"))
 

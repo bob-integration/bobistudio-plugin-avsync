@@ -1,3 +1,8 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 BOBI SAS, France
+# Auteur : Cyril Mazouer, pour le compte de BOBI SAS
+# Distribué sous licence GNU GPL v3 (ou ultérieure) ; voir le fichier LICENSE.
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Mire synchro A/V — générateur de test (catégorie Sources).
 # Produit un shm vidéo (YUV420p) + un shm audio (s24le 8ch) au format MXL.
@@ -49,15 +54,25 @@ FORMAT_STR = "%dx%d @%dp" % (WIDTH, HEIGHT, FPS)
 
 # ─── formats shm (identiques au pipeline MXL) ────────────────────────────────
 CHROMA = str(CONFIG.get("chroma") or "422")
+# Profondeur shm 8/10/12 bits. La quantification est paramétrée (_SCALE/_MAXV/_NP_DT) :
+# en 8 bits _SCALE=1 et dtype uint8 → sortie byte-identique, pas de surcoût uint16.
+BIT_DEPTH = int(CONFIG.get("bit_depth") or 8)
+_DEEP  = BIT_DEPTH >= 10
+_BPS   = 2 if _DEEP else 1
+_NP_DT = np.uint16 if _DEEP else np.uint8
+_SCALE = 1 << (BIT_DEPTH - 8)          # 1 / 4 / 16 — facteur d'échelle studio 8→N bits
+_MAXV  = (1 << BIT_DEPTH) - 1           # 255 / 1023 / 4095
+_NEUTRAL = 1 << (BIT_DEPTH - 1)         # 128 / 512 / 2048
 _CW = {{"420": 2, "422": 2, "444": 1}}.get(CHROMA, 2)
 _CH = {{"420": 2, "422": 1, "444": 1}}.get(CHROMA, 1)
-PIX_FMT = {{"420": "yuv420p", "422": "yuv422p", "444": "yuv444p"}}.get(CHROMA, "yuv422p")
+PIX_FMT = ({{"420": "yuv420p", "422": "yuv422p", "444": "yuv444p"}}.get(CHROMA, "yuv422p")
+           + (("12le" if BIT_DEPTH >= 12 else "10le") if _DEEP else ""))
 UV_W = WIDTH // _CW
 UV_H = HEIGHT // _CH
 V_HEADER_SIZE = 64
 V_RING_SIZE   = CONFIG.get("shm_video_ring", 10)
-Y_SIZE        = WIDTH * HEIGHT
-UV_SIZE       = UV_W * UV_H
+Y_SIZE        = WIDTH * HEIGHT * _BPS
+UV_SIZE       = UV_W * UV_H * _BPS
 V_FRAME_SIZE  = Y_SIZE + 2 * UV_SIZE
 V_TOTAL_SIZE  = V_HEADER_SIZE + V_RING_SIZE * V_FRAME_SIZE
 
@@ -104,9 +119,10 @@ def _rgb_to_yuv420(rgb):
     y = ( 0.257 * r + 0.504 * g + 0.098 * b + 16.0)
     u = (-0.148 * r - 0.291 * g + 0.439 * b + 128.0)
     v = ( 0.439 * r - 0.368 * g - 0.071 * b + 128.0)
-    y_u8 = np.clip(y, 0, 255).astype(np.uint8)
-    u_u8 = np.clip(u[::_CH, ::_CW], 0, 255).astype(np.uint8)
-    v_u8 = np.clip(v[::_CH, ::_CW], 0, 255).astype(np.uint8)
+    # Mise à l'échelle studio 8→N bits (×_SCALE) ; en 8 bits _SCALE=1, dtype uint8 (inchangé).
+    y_u8 = np.clip(y * _SCALE, 0, _MAXV).astype(_NP_DT)
+    u_u8 = np.clip(u[::_CH, ::_CW] * _SCALE, 0, _MAXV).astype(_NP_DT)
+    v_u8 = np.clip(v[::_CH, ::_CW] * _SCALE, 0, _MAXV).astype(_NP_DT)
     return y_u8.tobytes() + u_u8.tobytes() + v_u8.tobytes()
 
 
