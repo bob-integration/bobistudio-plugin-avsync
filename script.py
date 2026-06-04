@@ -210,14 +210,14 @@ def _frame_bytes(flash, sec, fis, bar_x, img_black=None, img_white=None):
     return _rgb_to_yuv420(np.asarray(im))
 
 
-# ─── bip audio : chunks de 1 ms pré-calculés (sinus s24le 8ch) ───────────────
+# ─── bip audio : chunks de 1 ms pré-calculés (sinus s24be 8ch, wire-native) ──
 def _beep_chunks(flash_ms=None, tone_hz=None):
     n_ms = max(1, int(flash_ms if flash_ms is not None else FLASH_MS))
     hz   = float(tone_hz if tone_hz is not None else TONE_HZ)
     nsamp = (A_SAMPLE_RATE // 1000) * n_ms
     t = np.arange(nsamp, dtype=np.float64) / A_SAMPLE_RATE
-    w = (np.sin(2 * np.pi * hz * t) * 0.5 * (2 ** 23 - 1)).astype("<i4")
-    mono = w.view(np.uint8).reshape(-1, 4)[:, :3]                    # (nsamp,3) LE 24-bit
+    w = (np.sin(2 * np.pi * hz * t) * 0.5 * (2 ** 23 - 1)).astype(">i4")
+    mono = w.view(np.uint8).reshape(-1, 4)[:, 1:]                    # (nsamp,3) BE 24-bit (octets hi,mid,lo)
     inter = np.tile(mono[:, None, :], (1, A_CHANNELS, 1)).reshape(-1)
     b = inter.tobytes()
     return [b[i * A_CHUNK_SIZE:(i + 1) * A_CHUNK_SIZE] for i in range(n_ms)]
