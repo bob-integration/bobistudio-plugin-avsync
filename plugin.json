@@ -2,11 +2,12 @@
   "license": "GPL-3.0-or-later",
   "type": "avsync",
   "label": "Mire synchro A/V",
+  "runtime": "docker",
   "badge": {
     "label": "AV Sync",
     "class": "mode-corrector"
   },
-  "version": "0.3.4",
+  "version": "0.4.0",
   "description": "Générateur de test de synchronisation image/son : flash plein écran + bip synchrones, compteur, barre de balayage, et overlay personnalisable (logo entreprise, nom du système, localisation, format vidéo, texte libre).",
   "nav": {
     "section": "sources",
