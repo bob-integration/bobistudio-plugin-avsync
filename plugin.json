@@ -7,7 +7,7 @@
     "label": "AV Sync",
     "class": "mode-corrector"
   },
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Générateur de test de synchronisation image/son : flash plein écran + bip synchrones, compteur, barre de balayage, et overlay personnalisable (logo entreprise, nom du système, localisation, format vidéo, texte libre).",
   "nav": {
     "section": "sources",
