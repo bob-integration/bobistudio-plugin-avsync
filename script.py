@@ -89,7 +89,15 @@ AUDIO_SHM = HOSTNAME + "_audio"
 metrics_lock = threading.Lock()
 metrics = {{"fps": 0.0, "frame_index": 0, "playing": True, "plugin_version": PLUGIN_VERSION}}
 
-T0 = time.monotonic()   # origine d'horloge PARTAGÉE vidéo + audio → flash/bip alignés
+# Genlock broadcast : origine d'horloge PARTAGÉE vidéo+audio sur l'horloge REALTIME (CLOCK_REALTIME,
+# disciplinée PTP par phc2sys) → flash/bip alignés ET traçables PTP ; la sortie est cadencée sur la
+# grille epoch (write_ts = instant de grille). off → cadence libre (monotonic héritée).
+_gl = CONFIG.get("genlock", True)
+GENLOCK = _gl if isinstance(_gl, bool) else str(_gl).strip().lower() in ("1", "true", "yes", "on")
+def _grid_next(now_s, interval_s):
+    import math as _m
+    return (_m.floor(now_s / interval_s) + 1) * interval_s
+T0 = time.time() if GENLOCK else time.monotonic()   # origine partagée vidéo + audio
 
 
 # ─── shm helpers ─────────────────────────────────────────────────────────────
@@ -99,11 +107,11 @@ def _open_out(path, size):
     f = open(path, "r+b")
     return f, mmap.mmap(f.fileno(), size)
 
-def _write_video(shm, frame_bytes, idx):
+def _write_video(shm, frame_bytes, idx, ts=None):
     slot = idx % V_RING_SIZE
     off = V_HEADER_SIZE + slot * V_FRAME_SIZE
     shm[off:off + V_FRAME_SIZE] = frame_bytes
-    shm[0:16] = struct.pack("QQ", idx, time.time_ns())
+    shm[0:16] = struct.pack("QQ", idx, ts if ts is not None else time.time_ns())
 
 def _write_audio(shm, chunk_bytes, idx):
     slot = idx % A_RING_SIZE
@@ -252,22 +260,24 @@ def video_feeder():
     f_out, shm = _open_out("/dev/shm/" + VIDEO_SHM, V_TOTAL_SIZE)
     idx = 1
     period = 1.0 / FPS
-    next_t = time.monotonic()
+    _clk = time.time if GENLOCK else time.monotonic
+    next_t = _grid_next(_clk(), period) if GENLOCK else _clk()
     win_cnt = 0; win_start = time.time()
     while True:
-        now = time.monotonic()
+        now = _clk()
         if now < next_t:
-            time.sleep(next_t - now); now = time.monotonic()
+            time.sleep(next_t - now); now = _clk()
         with _live_lock:
             beat_sec = _live["beat_sec"]; flash_ms = _live["flash_ms"]
             img_b = _live["img_black"];   img_w = _live["img_white"]
-        el = now - T0
+        el = (next_t if GENLOCK else now) - T0     # instant de présentation (grille en genlock)
         phase = el % beat_sec
         flash = phase < (flash_ms / 1000.0)
         sec = int(el)
         fis = int((el - sec) * FPS)
         bar_x = int((phase / beat_sec) * (WIDTH - 1))
-        _write_video(shm, _frame_bytes(flash, sec, fis, bar_x, img_b, img_w), idx); idx += 1
+        _write_video(shm, _frame_bytes(flash, sec, fis, bar_x, img_b, img_w), idx,
+                     ts=int(next_t * 1e9) if GENLOCK else None); idx += 1
         win_cnt += 1
         _e = time.time() - win_start
         if _e >= 1.0:
@@ -276,14 +286,15 @@ def video_feeder():
             win_cnt = 0; win_start = time.time()
         next_t += period
         if next_t < now:
-            next_t = now + period
+            next_t = (_grid_next(now, period) if GENLOCK else now + period)
 
 def audio_feeder():
     f_out, shm = _open_out("/dev/shm/" + AUDIO_SHM, A_TOTAL_SIZE)
     ci = 1
     written_ms = 0
+    _aclk = time.time if GENLOCK else time.monotonic
     while True:
-        due = int((time.monotonic() - T0) * 1000)
+        due = int((_aclk() - T0) * 1000)
         with _live_lock:
             beat_ms = _live["beat_ms"]; beep = _live["beep"]
         guard = 0

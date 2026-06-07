@@ -1,8 +1,9 @@
 {
-  "version": "0.4.0",
-  "date": "2026-06-05",
+  "version": "0.5.0",
+  "date": "2026-06-07",
   "changes": {
     "Nouveautés": [
+      "Genlock broadcast : la mire est cadencée sur la grille PTP (CLOCK_REALTIME, disciplinée phc2sys) et son horloge partagée vidéo+audio (flash/bip) passe sur REALTIME → write_ts = instant de grille, flash/bip traçables PTP (la mire devient une référence A/V genlockée valide). Activé par défaut (deploy_defaults.genlock=true), repli monotonic libre si off.",
       "Exécution sous Docker (runtime compute : image bobi-compute, agent-in-container + réseau macvlan, /dev/shm bind-monté). Le type devient docker-only — créé via Réglages → Déploiement → Nœuds sur un nœud compute (plus de vaisseau LXC). numpy/Pillow déjà présents dans l'image (bobi-compute:0.2), aucun rebuild requis."
     ],
     "Nouveautés (0.3.4)": [
