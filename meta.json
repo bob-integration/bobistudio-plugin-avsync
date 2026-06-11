@@ -1,6 +1,6 @@
 {
-  "version": "0.6.0",
-  "date": "2026-06-07",
+  "version": "0.6.1",
+  "date": "2026-06-08",
   "changes": {
     "Nouveautés": [
       "Cadences FRACTIONNAIRES natives (29.97/59.94/23.976) : la période de sortie est désormais EXACTE (num/den : 29.97→30000/1001, 59.94→60000/1001) au lieu de 1/round(fps) qui dérivait de 0,1 %. _rate_nd() mappe la cadence et accepte la forme 30000/1001 (chaîne). Entier (25/50) inchangé.",
@@ -13,7 +13,9 @@
     "Nouveautés (0.3.3)": [
       "Profondeur de bits du pipeline shm configurable 8/10/12 bits — pilotée par Réglages → MXL « Profondeur du pipeline shm » (force8 par défaut : 8 bits, comportement inchangé ; suivi du format : frames 10/12 bits stockées sur 16 bits, ×2 mémoire)."
     ],
-    "Corrections": [],
+    "Corrections": [
+      "Timestamp de grille en arithmétique entière exacte (_grid_ns/_grid_k/_grid_sleep_until, pattern player) au lieu de int(next_t * 1e9) float → précision nanoseconde, dérive float éliminée."
+    ],
     "Bugs connus": []
   }
 }

@@ -5,7 +5,7 @@
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Mire synchro A/V — générateur de test (catégorie Sources).
-# Produit un shm vidéo (YUV420p) + un shm audio (s24le 8ch) au format MXL.
+# Produit un shm vidéo (YUV420p) + un shm audio (s24be 8ch) au format MXL.
 #   - FLASH plein écran + BIP sinus SYNCHRONES (les deux calés sur la même horloge
 #     time.monotonic() → pas de signalisation inter-thread, alignés au battement).
 #   - Compteur sec.frame, barre de balayage (détection de saccades).
@@ -92,7 +92,7 @@ A_SAMPLE_RATE = 48000
 A_CHANNELS    = 8
 A_HEADER_SIZE = 64
 A_RING_SIZE   = CONFIG.get("shm_audio_ring", 100)
-A_CHUNK_SIZE  = (A_SAMPLE_RATE // 1000) * A_CHANNELS * 3   # 1152 (1 ms s24le 8ch)
+A_CHUNK_SIZE  = (A_SAMPLE_RATE // 1000) * A_CHANNELS * 3   # 1152 (1 ms s24be 8ch)
 A_TOTAL_SIZE  = A_HEADER_SIZE + A_RING_SIZE * A_CHUNK_SIZE
 
 VIDEO_SHM = HOSTNAME
@@ -109,6 +109,13 @@ GENLOCK = _gl if isinstance(_gl, bool) else str(_gl).strip().lower() in ("1", "t
 def _grid_next(now_s, interval_s):
     import math as _m
     return (_m.floor(now_s / interval_s) + 1) * interval_s
+def _grid_ns(k):
+    return round(k * 1_000_000_000 * FPS_DEN / FPS_NUM)
+def _grid_k(ns):
+    return ns * FPS_NUM // (1_000_000_000 * FPS_DEN)
+def _grid_sleep_until(deadline_ns):
+    dt = (deadline_ns - time.clock_gettime_ns(time.CLOCK_REALTIME)) / 1e9
+    if dt > 0: time.sleep(dt)
 T0 = time.time() if GENLOCK else time.monotonic()   # origine partagée vidéo + audio
 
 
@@ -271,14 +278,19 @@ def _apply_live(patch):
 def video_feeder():
     f_out, shm = _open_out("/dev/shm/" + VIDEO_SHM, V_TOTAL_SIZE)
     idx = 1
-    period = FPS_DEN / FPS_NUM          # période exacte (cadence rationnelle)
+    period = FPS_DEN / FPS_NUM
     _clk = time.time if GENLOCK else time.monotonic
     next_t = _grid_next(_clk(), period) if GENLOCK else _clk()
+    frame_k = _grid_k(time.clock_gettime_ns(time.CLOCK_REALTIME)) + 2 if GENLOCK else 0
     win_cnt = 0; win_start = time.time()
     while True:
-        now = _clk()
-        if now < next_t:
-            time.sleep(next_t - now); now = _clk()
+        if GENLOCK:
+            _grid_sleep_until(_grid_ns(frame_k))
+            now = _clk()
+        else:
+            now = _clk()
+            if now < next_t:
+                time.sleep(next_t - now); now = _clk()
         with _live_lock:
             beat_sec = _live["beat_sec"]; flash_ms = _live["flash_ms"]
             img_b = _live["img_black"];   img_w = _live["img_white"]
@@ -289,7 +301,7 @@ def video_feeder():
         fis = int((el - sec) * FPS)
         bar_x = int((phase / beat_sec) * (WIDTH - 1))
         _write_video(shm, _frame_bytes(flash, sec, fis, bar_x, img_b, img_w), idx,
-                     ts=int(next_t * 1e9) if GENLOCK else None); idx += 1
+                     ts=_grid_ns(frame_k) if GENLOCK else None); idx += 1
         win_cnt += 1
         _e = time.time() - win_start
         if _e >= 1.0:
@@ -299,6 +311,10 @@ def video_feeder():
         next_t += period
         if next_t < now:
             next_t = (_grid_next(now, period) if GENLOCK else now + period)
+        if GENLOCK:
+            frame_k += 1
+            now_k = _grid_k(time.clock_gettime_ns(time.CLOCK_REALTIME))
+            if frame_k < now_k: frame_k = now_k + 1   # rattrapage si retard système
 
 def audio_feeder():
     f_out, shm = _open_out("/dev/shm/" + AUDIO_SHM, A_TOTAL_SIZE)
