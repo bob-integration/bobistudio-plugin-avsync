@@ -20,6 +20,7 @@
 import os, io, mmap, struct, time, json, base64, threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import numpy as np
+import bobimxl   # migration MXL Phase 1 : sortie VIDÉO via Writer (audio = legacy mmap)
 from PIL import Image, ImageDraw, ImageFont
 try:
     RESAMPLE = Image.Resampling.LANCZOS
@@ -97,6 +98,7 @@ A_TOTAL_SIZE  = A_HEADER_SIZE + A_RING_SIZE * A_CHUNK_SIZE
 
 VIDEO_SHM = HOSTNAME
 AUDIO_SHM = HOSTNAME + "_audio"
+inst = bobimxl.Instance()   # domaine MXL ($MXL_DOMAIN ou /dev/shm/mxl) — sortie vidéo
 
 metrics_lock = threading.Lock()
 metrics = {{"fps": 0.0, "frame_index": 0, "playing": True, "plugin_version": PLUGIN_VERSION}}
@@ -276,7 +278,8 @@ def _apply_live(patch):
 
 # ─── threads de génération ───────────────────────────────────────────────────
 def video_feeder():
-    f_out, shm = _open_out("/dev/shm/" + VIDEO_SHM, V_TOTAL_SIZE)
+    w = bobimxl.Writer(inst, VIDEO_SHM, WIDTH, HEIGHT, CHROMA, BIT_DEPTH, FPS_NUM, FPS_DEN,
+                       index_mode=("tai" if GENLOCK else "free"))
     idx = 1
     period = FPS_DEN / FPS_NUM
     _clk = time.time if GENLOCK else time.monotonic
@@ -300,8 +303,10 @@ def video_feeder():
         sec = int(el)
         fis = int((el - sec) * FPS)
         bar_x = int((phase / beat_sec) * (WIDTH - 1))
-        _write_video(shm, _frame_bytes(flash, sec, fis, bar_x, img_b, img_w), idx,
-                     ts=_grid_ns(frame_k) if GENLOCK else None); idx += 1
+        _fb = _frame_bytes(flash, sec, fis, bar_x, img_b, img_w)
+        _i, _gi, _vw = w.open_grain(index=(frame_k if GENLOCK else None))
+        _vw[:len(_fb)] = np.frombuffer(_fb, dtype=np.uint8)
+        w.commit(_gi); idx += 1
         win_cnt += 1
         _e = time.time() - win_start
         if _e >= 1.0:

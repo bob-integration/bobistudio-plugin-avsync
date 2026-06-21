@@ -1,7 +1,10 @@
 {
-  "version": "0.6.1",
-  "date": "2026-06-08",
+  "version": "0.7.0",
+  "date": "2026-06-21",
   "changes": {
+    "Nouveautés (0.7.0)": [
+      "Migration MXL (Phase 1) : sortie VIDÉO (mire A/V) via bobimxl.Writer (planar, index tai en genlock / libre sinon). AUDIO inchangé (générateur bip legacy mmap, différé Phase 2). Requiert bobi-compute >= 0.5."
+    ],
     "Nouveautés": [
       "Cadences FRACTIONNAIRES natives (29.97/59.94/23.976) : la période de sortie est désormais EXACTE (num/den : 29.97→30000/1001, 59.94→60000/1001) au lieu de 1/round(fps) qui dérivait de 0,1 %. _rate_nd() mappe la cadence et accepte la forme 30000/1001 (chaîne). Entier (25/50) inchangé.",
       "Genlock broadcast : la mire est cadencée sur la grille PTP (CLOCK_REALTIME, disciplinée phc2sys) et son horloge partagée vidéo+audio (flash/bip) passe sur REALTIME → write_ts = instant de grille, flash/bip traçables PTP (la mire devient une référence A/V genlockée valide). Activé par défaut (deploy_defaults.genlock=true), repli monotonic libre si off.",
