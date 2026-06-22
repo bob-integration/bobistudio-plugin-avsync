@@ -17,10 +17,10 @@
 # {plugin_version} sont des placeholders. TOUTE autre accolade littérale doit être
 # DOUBLÉE {{ }} sinon str.format échoue.
 # ─────────────────────────────────────────────────────────────────────────────
-import os, io, mmap, struct, time, json, base64, threading
+import os, io, time, json, base64, threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import numpy as np
-import bobimxl   # migration MXL Phase 1 : sortie VIDÉO via Writer (audio = legacy mmap)
+import bobimxl   # migration MXL : sortie vidéo (Writer) + audio bip (AudioWriter) — Phases 1/3
 from PIL import Image, ImageDraw, ImageFont
 try:
     RESAMPLE = Image.Resampling.LANCZOS
@@ -120,25 +120,6 @@ def _grid_sleep_until(deadline_ns):
     if dt > 0: time.sleep(dt)
 T0 = time.time() if GENLOCK else time.monotonic()   # origine partagée vidéo + audio
 
-
-# ─── shm helpers ─────────────────────────────────────────────────────────────
-def _open_out(path, size):
-    with open(path, "wb") as f:
-        f.write(b"\x00" * size)
-    f = open(path, "r+b")
-    return f, mmap.mmap(f.fileno(), size)
-
-def _write_video(shm, frame_bytes, idx, ts=None):
-    slot = idx % V_RING_SIZE
-    off = V_HEADER_SIZE + slot * V_FRAME_SIZE
-    shm[off:off + V_FRAME_SIZE] = frame_bytes
-    shm[0:16] = struct.pack("QQ", idx, ts if ts is not None else time.time_ns())
-
-def _write_audio(shm, chunk_bytes, idx):
-    slot = idx % A_RING_SIZE
-    off = A_HEADER_SIZE + slot * A_CHUNK_SIZE
-    shm[off:off + A_CHUNK_SIZE] = chunk_bytes
-    shm[0:24] = struct.pack("QQIHH", idx, time.time_ns(), A_SAMPLE_RATE, A_CHANNELS, 24)
 
 def _rgb_to_yuv420(rgb):
     """rgb uint8 (H,W,3) → bytes Y + U + V (4:2:0), BT.601 studio."""

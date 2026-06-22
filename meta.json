@@ -1,7 +1,10 @@
 {
-  "version": "0.8.0",
+  "version": "0.8.1",
   "date": "2026-06-22",
   "changes": {
+    "Ménage (0.8.1)": [
+      "Ménage : retrait des helpers shm/mmap legacy `_open_out`/`_write_video`/`_write_audio` (sans appelant depuis la migration MXL) + imports mmap/struct inutiles. Aucun changement de comportement."
+    ],
     "Bascule audio MXL (0.8.0)": [
       "Migration MXL Phase 3 : le bip de calage sort en flux MXL samples float32 (AudioWriter, blocs 1 ms) au lieu du ring shm s24be. REBUILD IMAGE REQUIS."
     ],
