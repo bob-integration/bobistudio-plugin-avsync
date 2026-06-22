@@ -1,7 +1,10 @@
 {
-  "version": "0.7.0",
-  "date": "2026-06-21",
+  "version": "0.8.0",
+  "date": "2026-06-22",
   "changes": {
+    "Bascule audio MXL (0.8.0)": [
+      "Migration MXL Phase 3 : le bip de calage sort en flux MXL samples float32 (AudioWriter, blocs 1 ms) au lieu du ring shm s24be. REBUILD IMAGE REQUIS."
+    ],
     "Nouveautés (0.7.0)": [
       "Migration MXL (Phase 1) : sortie VIDÉO (mire A/V) via bobimxl.Writer (planar, index tai en genlock / libre sinon). AUDIO inchangé (générateur bip legacy mmap, différé Phase 2). Requiert bobi-compute >= 0.5."
     ],
