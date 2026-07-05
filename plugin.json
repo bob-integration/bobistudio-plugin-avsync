@@ -42,7 +42,8 @@
       "min": 320,
       "max": 3840,
       "step": 2,
-      "default": 1280
+      "default": 1280,
+      "scope": "user"
     },
     {
       "key": "height",
@@ -51,7 +52,8 @@
       "min": 180,
       "max": 2160,
       "step": 2,
-      "default": 720
+      "default": 720,
+      "scope": "user"
     },
     {
       "key": "fps",
@@ -59,7 +61,8 @@
       "label": "Fréquence (fps)",
       "min": 1,
       "max": 60,
-      "default": 25
+      "default": 25,
+      "scope": "user"
     },
     {
       "key": "chroma",
@@ -79,7 +82,8 @@
           "value": "444",
           "label": "YUV 4:4:4"
         }
-      ]
+      ],
+      "scope": "user"
     },
     {
       "key": "beat_sec",
@@ -88,7 +92,8 @@
       "min": 0.2,
       "max": 10,
       "step": 0.1,
-      "default": 1.0
+      "default": 1.0,
+      "scope": "user"
     },
     {
       "key": "flash_ms",
@@ -96,7 +101,8 @@
       "label": "Durée flash + bip (ms)",
       "min": 10,
       "max": 500,
-      "default": 40
+      "default": 40,
+      "scope": "user"
     },
     {
       "key": "tone_hz",
@@ -104,19 +110,22 @@
       "label": "Fréquence bip (Hz)",
       "min": 100,
       "max": 12000,
-      "default": 1000
+      "default": 1000,
+      "scope": "user"
     },
     {
       "key": "custom_text",
       "type": "text",
       "label": "Texte personnalisé",
-      "placeholder": "ex. Banc d'essai — Régie A"
+      "placeholder": "ex. Banc d'essai — Régie A",
+      "scope": "user"
     },
     {
       "key": "show_brand",
       "type": "checkbox",
       "label": "Afficher la marque (logo + nom + lieu)",
-      "default": true
+      "default": true,
+      "scope": "user"
     }
   ],
   "wiring": {
