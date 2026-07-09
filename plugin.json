@@ -149,5 +149,93 @@
       "/state",
       "/config"
     ]
-  }
+  },
+  "actions": [
+    {
+      "id": "beat",
+      "label": "Régler la période du beat (s)",
+      "endpoint": "/config",
+      "params": [
+        {
+          "key": "beat_sec",
+          "label": "Période (s)",
+          "type": "number",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "id": "tone",
+      "label": "Régler la fréquence du bip (Hz)",
+      "endpoint": "/config",
+      "params": [
+        {
+          "key": "tone_hz",
+          "label": "Fréquence (Hz)",
+          "type": "number",
+          "default": 1000
+        }
+      ]
+    },
+    {
+      "id": "brand",
+      "label": "Afficher l'habillage",
+      "endpoint": "/config",
+      "params": [
+        {
+          "key": "show_brand",
+          "label": "Affiché",
+          "type": "bool",
+          "default": true
+        }
+      ],
+      "feedback": {
+        "state": "show_brand",
+        "value_from": "show_brand"
+      }
+    },
+    {
+      "id": "text",
+      "label": "Changer le texte personnalisé",
+      "endpoint": "/config",
+      "params": [
+        {
+          "key": "custom_text",
+          "label": "Texte",
+          "type": "text",
+          "default": ""
+        }
+      ]
+    }
+  ],
+  "state": [
+    {
+      "id": "beat_sec",
+      "label": "Période du beat (s)",
+      "endpoint": "/state",
+      "path": "beat_sec",
+      "type": "number"
+    },
+    {
+      "id": "show_brand",
+      "label": "Habillage affiché",
+      "endpoint": "/state",
+      "path": "show_brand",
+      "type": "bool"
+    },
+    {
+      "id": "custom_text",
+      "label": "Texte personnalisé",
+      "endpoint": "/state",
+      "path": "custom_text",
+      "type": "text"
+    },
+    {
+      "id": "fps_live",
+      "label": "FPS mesuré",
+      "endpoint": "/state",
+      "path": "fps_live",
+      "type": "number"
+    }
+  ]
 }
