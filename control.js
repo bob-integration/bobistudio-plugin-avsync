@@ -75,26 +75,39 @@ window.MXLPlugins["avsync"] = {
       if (!f) return;
       const chromaSel = el.querySelector('[name="chroma"]');
       if (chromaSel) chromaSel.value = f.chroma;
+      _dirty.add('fmt_preset'); _dirty.add('chroma');   // choix utilisateur → protégé du refresh
     });
 
-    // ─── Form fill (unique au premier chargement) ────────────────────────────
-    let _filled = false;
+    // ─── Form fill (refresh périodique SANS écraser l'édition en cours) ──────
+    // Champs « dirty » = modifiés par l'utilisateur depuis le dernier Appliquer :
+    // le polling ne les réécrit JAMAIS (ni un champ qui a le focus). L'Appliquer
+    // d'un groupe ré-autorise la synchro de ses seuls champs.
+    const _dirty = new Set();
+    const GROUP_FIELDS = {
+      fmt:  ['fmt_preset', 'chroma'],
+      av:   [...el.querySelectorAll('.avs-knob[data-name]')].map(k => k.dataset.name),
+      disp: ['show_brand', 'custom_text'],
+    };
+    let _fmtLoaded = false;
 
     function fillForm(s) {
-      if (_filled) return;
-      _filled = true;
       const set = (name, val) => {
         const f = el.querySelector(`[name="${name}"]`);
-        if (!f) return;
+        if (!f || _dirty.has(name) || document.activeElement === f) return;
         if (f.type === 'checkbox') f.checked = Boolean(val);
         else f.value = val != null ? val : '';
       };
-      // Peuple le select depuis les réglages + sélectionne le format courant
-      loadFmtSelect(s.width, s.height, s.fps).then(() => {
-        set('chroma', s.chroma || '422');
-      });
-      // Rotatifs
+      // Peuple le select depuis les réglages + sélectionne le format courant (1 seule fois,
+      // resynchronisé après un Appliquer du groupe fmt)
+      if (!_fmtLoaded) {
+        _fmtLoaded = true;
+        loadFmtSelect(s.width, s.height, s.fps).then(() => {
+          set('chroma', s.chroma || '422');
+        });
+      }
+      // Rotatifs (jamais pendant un drag ni s'ils sont dirty)
       el.querySelectorAll('.avs-knob[data-name]').forEach(k => {
+        if (_dirty.has(k.dataset.name) || (_drag && _drag.k === k)) return;
         const v = s[k.dataset.name];
         if (v != null) _setKnob(k, v);
       });
@@ -102,9 +115,12 @@ window.MXLPlugins["avsync"] = {
       set('custom_text',s.custom_text);
     }
 
-    // reset flag si l'utilisateur touche un champ
-    el.querySelectorAll('input, select').forEach(f =>
-      f.addEventListener('input', () => { _filled = false; }));
+    // toute saisie utilisateur marque le champ dirty (protégé du refresh jusqu'à Appliquer)
+    el.querySelectorAll('input, select').forEach(f => {
+      const mark = () => { if (f.name) _dirty.add(f.name); };
+      f.addEventListener('input', mark);
+      f.addEventListener('change', mark);
+    });
 
     // ─── Polling ─────────────────────────────────────────────────────────────
     async function refresh() {
@@ -174,7 +190,7 @@ window.MXLPlugins["avsync"] = {
       if (!_drag) return;
       const raw = _drag.startVal + (_drag.startY - e.clientY) * _drag.sens;
       _setKnob(_drag.k, raw);
-      _filled = false;
+      if (_drag.k.dataset.name) _dirty.add(_drag.k.dataset.name);
     });
 
     el.addEventListener('pointerup', e => {
@@ -190,7 +206,7 @@ window.MXLPlugins["avsync"] = {
       e.preventDefault();
       const step = _knobStep(k) * (e.shiftKey ? 5 : 1);
       _setKnob(k, parseFloat(k.dataset.val) + (e.deltaY < 0 ? step : -step));
-      _filled = false;
+      if (k.dataset.name) _dirty.add(k.dataset.name);
     }, { passive: false });
 
     // Clavier (flèches)
@@ -202,7 +218,7 @@ window.MXLPlugins["avsync"] = {
       const step = _knobStep(k) * (e.shiftKey ? 5 : 1);
       _setKnob(k, parseFloat(k.dataset.val)
         + (['ArrowUp', 'ArrowRight'].includes(e.key) ? step : -step));
-      _filled = false;
+      if (k.dataset.name) _dirty.add(k.dataset.name);
     });
 
     // ─── Collecte par groupe ─────────────────────────────────────────────────
@@ -235,6 +251,11 @@ window.MXLPlugins["avsync"] = {
       return body;
     }
 
+    function _clearDirty(group) {
+      (GROUP_FIELDS[group] || []).forEach(n => _dirty.delete(n));
+      if (group === 'fmt') _fmtLoaded = false;   // resélectionner le preset au prochain refresh
+    }
+
     function feedback(group, msg, ok) {
       const fb = el.querySelector(`.avs-fb[data-group="${group}"]`);
       if (!fb) return;
@@ -261,10 +282,10 @@ window.MXLPlugins["avsync"] = {
             feedback(group, res.error || `erreur ${r.status}`, false);
           } else if (res.status === 'deploiement_en_cours') {
             feedback(group, 'redéploiement…', true);
-            _filled = false;
+            _clearDirty(group);
           } else {
             feedback(group, 'ok', true);
-            _filled = false;   // forcer refresh des valeurs live
+            _clearDirty(group);   // ré-autoriser la synchro des champs appliqués
           }
         } catch {
           feedback(group, 'réseau', false);

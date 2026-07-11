@@ -1,7 +1,15 @@
 {
-  "version": "0.9.0",
+  "version": "0.10.0",
   "date": "2026-07-11",
   "changes": {
+    "Performance rendu (0.10.0)": [
+      "PERF : le rendu de la mire ne convertit plus la trame RGB→YUV en float pleine trame à chaque frame (hotspot mesuré : ~68 ms/frame @1080p, fps plafonné ~12). Les fonds noir/flash (avec overlay) sont précalculés en YUV planar (boot + changement show_brand/custom_text) ; par-frame il ne reste que : 1 memcpy du fond DIRECTEMENT dans le grain MXL (zéro-copie via open_grain), le patch de la barre de balayage par vues stridées, et le blend entier du compteur limité à son bbox (masque alpha PIL petit format, ÷255 exact *257>>16). Mesuré hors-ligne : 80,2 → 3,8 ms/frame @1080p50 4:2:2 (~21×). Sortie visuellement identique (écart ≤ 2 codes sur les bords anti-aliasés uniquement).",
+      "Mode tranche : plus de copie par bandes (le grain est rendu en place) — seul reste le commit progressif validSlices=1..N (_commit_sliced).",
+      "Nouvelle métrique :8080 own_latency_ms = coût propre rendu+commit par frame (fenêtre glissante, aucune attente d'horloge incluse — convention capacité orchestrateur)."
+    ],
+    "Réglages UI (0.10.0)": [
+      "FIX : le polling 3 s de la carte de contrôle écrasait les champs en cours d'édition (rotatifs, texte, format) AVANT l'Appliquer — le flag global _filled était réarmé par toute saisie. Remplacé par un suivi dirty PAR CHAMP : le refresh ne réécrit jamais un champ modifié ou focalisé ; l'Appliquer d'un groupe ré-autorise la synchro de ses seuls champs."
+    ],
     "Mode tranche MXL (0.9.0)": [
       "MODE TRANCHE (slice_mode, chantier latence sous-trame) : la mire (déjà rendue, trame complète) est émise PAR BANDES avec commit progressif (validSlices=1..N, pattern delay) quand la sortie est éligible (progressif + hauteur divisible, algo _out_slice_h ; slice_lines=36 pilote la granularité). Le flowDef porte slice_height → l'aval slice-aware démarre sur la 1ʳᵉ bande. Gain propre faible (rendu instantané) — cohérence de chaîne. Audio, timing flash/bip et media_ts STRICTEMENT inchangés (instrument de mesure A/V). Défaut OFF = octet-identique."
     ],

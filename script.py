@@ -114,37 +114,15 @@ def _out_slice_h(oh, ch=1):
 # Éligibilité tranche : la mire est toujours PROGRESSIVE → seule la divisibilité compte.
 V_SLICE_H = _out_slice_h(HEIGHT, _CH) if SLICE_MODE else 0
 _V_TOTAL_SLICES = (HEIGHT // V_SLICE_H) if V_SLICE_H else 1
-_Y_ROW  = WIDTH * _BPS
-_UV_ROW = UV_W * _BPS
 
-def _copy_band(dst, src, a, b):
-    """MODE TRANCHE — copie IDENTITÉ des lignes image [a, b) sur les 3 plans (Y|Cb|Cr) du
-    payload planar, en OCTETS plats (pattern delay _copy_band). `b` est toujours un multiple
-    de V_SLICE_H (lui-même multiple de _CH) → lignes chroma entières. Renvoie b."""
-    if b <= a:
-        return a
-    dst[a * _Y_ROW:b * _Y_ROW] = src[a * _Y_ROW:b * _Y_ROW]
-    ca = a // _CH; cb = b // _CH
-    if cb > ca:
-        o1 = Y_SIZE; o2 = Y_SIZE + UV_SIZE
-        dst[o1 + ca * _UV_ROW:o1 + cb * _UV_ROW] = src[o1 + ca * _UV_ROW:o1 + cb * _UV_ROW]
-        dst[o2 + ca * _UV_ROW:o2 + cb * _UV_ROW] = src[o2 + ca * _UV_ROW:o2 + cb * _UV_ROW]
-    return b
-
-def _emit_grain_sliced(w, gi, vw, data):
-    """MODE TRANCHE — émet une trame déjà COMPLÈTE dans un grain OUVERT, par bandes + commit
-    progressif (validSlices=1..N, quasi gratuit — pattern delay _emit_frame_sliced). Commit
+def _commit_sliced(w, gi):
+    """MODE TRANCHE — le rendu 0.10.0 écrit DIRECTEMENT dans le grain (zéro-copie) : plus de
+    copie par bandes, il ne reste que le commit progressif (validSlices=1..N, quasi gratuit —
+    pattern delay _emit_frame_sliced) qui réveille l'aval slice-aware bande par bande. Commit
     FINAL garanti (un grain laissé partiel ne serait jamais lisible)."""
     try:
-        src = np.frombuffer(data, dtype=np.uint8)
-        if src.size < V_FRAME_SIZE:
-            vw[:src.size] = src        # frame courte (défensif) : copie pleine, pas de bandes
-            return
-        a = 0
-        for k in range(1, _V_TOTAL_SLICES + 1):
-            a = _copy_band(vw, src, a, min(HEIGHT, k * V_SLICE_H))
-            if k < _V_TOTAL_SLICES:
-                w.commit(gi, valid_slices=k)   # réveille l'aval à chaque bande
+        for k in range(1, _V_TOTAL_SLICES):
+            w.commit(gi, valid_slices=k)   # réveille l'aval à chaque bande
     finally:
         w.commit(gi, valid_slices=None)
 
@@ -160,7 +138,7 @@ AUDIO_SHM = HOSTNAME + "_audio"
 inst = bobimxl.Instance()   # domaine MXL ($MXL_DOMAIN ou /dev/shm/mxl) — sortie vidéo
 
 metrics_lock = threading.Lock()
-metrics = {{"fps": 0.0, "frame_index": 0, "playing": True,
+metrics = {{"fps": 0.0, "frame_index": 0, "playing": True, "own_latency_ms": 0.0,
             "slice_mode": bool(V_SLICE_H), "plugin_version": PLUGIN_VERSION}}
 
 # Genlock broadcast : origine d'horloge PARTAGÉE vidéo+audio sur l'horloge REALTIME (CLOCK_REALTIME,
@@ -194,6 +172,22 @@ def _rgb_to_yuv420(rgb):
     u_u8 = np.clip(u[::_CH, ::_CW] * _SCALE, 0, _MAXV).astype(_NP_DT)
     v_u8 = np.clip(v[::_CH, ::_CW] * _SCALE, 0, _MAXV).astype(_NP_DT)
     return y_u8.tobytes() + u_u8.tobytes() + v_u8.tobytes()
+
+
+def _yuv_const(r, g, b):
+    """YUV studio d'une couleur RGB unie — MÊMES coefficients que _rgb_to_yuv420 (le patch
+    rapide 0.10.0 doit rester colorimétriquement identique au chemin historique)."""
+    y = 0.257 * r + 0.504 * g + 0.098 * b + 16.0
+    u = -0.148 * r - 0.291 * g + 0.439 * b + 128.0
+    v = 0.439 * r - 0.368 * g - 0.071 * b + 128.0
+    def _q(x):
+        return int(min(_MAXV, max(0, round(x * _SCALE))))
+    return _q(y), _q(u), _q(v)
+
+# Couleurs patchées par-frame (perf 0.10.0) : barre de balayage + compteur sur fond noir/flash.
+BAR_YUV          = _yuv_const(80, 160, 240)
+TXT_YUV_ON_BLACK = _yuv_const(255, 255, 255)
+TXT_YUV_ON_FLASH = _yuv_const(10, 10, 10)
 
 
 # ─── polices ─────────────────────────────────────────────────────────────────
@@ -261,23 +255,67 @@ def _build_imgs(show_brand, custom_text):
     wht = Image.alpha_composite(Image.new("RGBA", (WIDTH, HEIGHT), (236, 236, 236, 255)), ov).convert("RGB")
     return blk, wht
 
-IMG_BLACK, IMG_WHITE = _build_imgs(SHOW_BRAND, CUSTOM_TEXT)
+def _base_planes(img):
+    """Image PIL RGB → payload planar Y|Cb|Cr précalculé (np.uint8 plat, V_FRAME_SIZE octets).
+    Conversion float PLEINE trame faite UNE FOIS (boot / changement d'overlay), plus jamais
+    par-frame — c'était le hotspot (~68 ms/frame @1080p, fps plafonné ~12)."""
+    return np.frombuffer(_rgb_to_yuv420(np.asarray(img)), dtype=np.uint8).copy()
+
+_b, _w = _build_imgs(SHOW_BRAND, CUSTOM_TEXT)
+YUV_BLACK, YUV_WHITE = _base_planes(_b), _base_planes(_w)
+del _b, _w
 
 
-def _frame_bytes(flash, sec, fis, bar_x, img_black=None, img_white=None):
-    if img_black is None: img_black = IMG_BLACK
-    if img_white is None: img_white = IMG_WHITE
-    im = (img_white if flash else img_black).copy()
-    d = ImageDraw.Draw(im)
-    # barre de balayage verticale
+def _blend_region(plane, y0, y1, x0, x1, alpha, cval):
+    """plane[y0:y1, x0:x1] ← alpha·cval + (1−alpha)·fond — blend entier exact (÷255 via
+    *257>>16, astuce memory-bound multiview) sur une PETITE région (le bbox du compteur)."""
+    bg = plane[y0:y1, x0:x1].astype(np.uint32)
+    a = alpha.astype(np.uint32)
+    plane[y0:y1, x0:x1] = (((a * cval + (255 - a) * bg + 128) * 257) >> 16).astype(plane.dtype)
+
+
+def _render_into(vw, flash, sec, fis, bar_x, yuv_black=None, yuv_white=None):
+    """Rend la mire DIRECTEMENT dans le grain MXL (zéro-copie) :
+    1 memcpy du fond précalculé + patch de la barre (vues stridées, pas de gather) + blend du
+    compteur en YUV sur son seul bbox (masque alpha PIL petit format). Sortie visuellement
+    identique au chemin historique (écart ≤ 2 codes sur les bords anti-aliasés)."""
+    base = (yuv_white if flash else yuv_black)
+    if base is None:
+        base = YUV_WHITE if flash else YUV_BLACK
+    vw[:V_FRAME_SIZE] = base
+    Y = vw[:Y_SIZE].view(_NP_DT).reshape(HEIGHT, WIDTH)
+    U = vw[Y_SIZE:Y_SIZE + UV_SIZE].view(_NP_DT).reshape(UV_H, UV_W)
+    V = vw[Y_SIZE + UV_SIZE:V_FRAME_SIZE].view(_NP_DT).reshape(UV_H, UV_W)
+    # barre de balayage verticale (PIL rectangle incluait le bord droit → largeur bw+1)
     bw = max(2, WIDTH // 200)
-    d.rectangle([bar_x, 0, bar_x + bw, HEIGHT - 1], fill=(80, 160, 240))
-    # compteur centré : secondes.frame
+    x1 = min(WIDTH, bar_x + bw + 1)
+    Y[:, bar_x:x1] = BAR_YUV[0]
+    # chroma : règle historique du sous-échantillonnage = échantillon (i,j) ← pixel haut-gauche
+    cx0 = (bar_x + _CW - 1) // _CW; cx1 = (x1 + _CW - 1) // _CW
+    U[:, cx0:cx1] = BAR_YUV[1]; V[:, cx0:cx1] = BAR_YUV[2]
+    # compteur centré sec.frame : masque alpha rendu sur une petite image L, blend local
     txt = "%d.%02d" % (sec, fis)
-    tw, th = _tsize(txt, FONT_BIG)
-    col = (10, 10, 10) if flash else (255, 255, 255)
-    d.text(((WIDTH - tw) // 2, (HEIGHT - th) // 2), txt, font=FONT_BIG, fill=col)
-    return _rgb_to_yuv420(np.asarray(im))
+    bb = _probe.textbbox((0, 0), txt, font=FONT_BIG)
+    tw, th = bb[2] - bb[0], bb[3] - bb[1]
+    px, py = (WIDTH - tw) // 2, (HEIGHT - th) // 2
+    mask = Image.new("L", (bb[2] + 2, bb[3] + 2), 0)
+    ImageDraw.Draw(mask).text((0, 0), txt, font=FONT_BIG, fill=255)
+    a = np.asarray(mask)
+    gx0 = max(0, px); gy0 = max(0, py)
+    gx0 -= gx0 % _CW; gy0 -= gy0 % _CH                 # région alignée chroma
+    gx1 = min(WIDTH, px + a.shape[1]);  gx1 = min(WIDTH, gx1 + (-gx1) % _CW)
+    gy1 = min(HEIGHT, py + a.shape[0]); gy1 = min(HEIGHT, gy1 + (-gy1) % _CH)
+    reg = np.zeros((gy1 - gy0, gx1 - gx0), dtype=np.uint8)
+    y_lo = max(gy0, py); y_hi = min(gy1, py + a.shape[0])
+    x_lo = max(gx0, px); x_hi = min(gx1, px + a.shape[1])
+    if y_hi > y_lo and x_hi > x_lo:
+        reg[y_lo - gy0:y_hi - gy0, x_lo - gx0:x_hi - gx0] = a[y_lo - py:y_hi - py,
+                                                              x_lo - px:x_hi - px]
+    cy, cu, cv = TXT_YUV_ON_FLASH if flash else TXT_YUV_ON_BLACK
+    _blend_region(Y, gy0, gy1, gx0, gx1, reg, cy)
+    ac = reg[::_CH, ::_CW]
+    _blend_region(U, gy0 // _CH, gy1 // _CH, gx0 // _CW, gx1 // _CW, ac, cu)
+    _blend_region(V, gy0 // _CH, gy1 // _CH, gx0 // _CW, gx1 // _CW, ac, cv)
 
 
 # ─── bip audio : blocs de 1 ms pré-calculés (sinus float32 8ch) — flux MXL ──
@@ -302,7 +340,7 @@ _live_lock = threading.Lock()
 _live = {{
     "beat_sec": BEAT_SEC, "flash_ms": int(FLASH_MS), "tone_hz": float(TONE_HZ),
     "show_brand": SHOW_BRAND, "custom_text": CUSTOM_TEXT,
-    "beep": BEEP, "beat_ms": BEAT_MS, "img_black": IMG_BLACK, "img_white": IMG_WHITE,
+    "beep": BEEP, "beat_ms": BEAT_MS, "yuv_black": YUV_BLACK, "yuv_white": YUV_WHITE,
 }}
 
 def _apply_live(patch):
@@ -315,7 +353,7 @@ def _apply_live(patch):
             _live["beep"] = _beep_chunks(_live["flash_ms"], _live["tone_hz"])
         if "show_brand" in patch or "custom_text" in patch:
             blk, wht = _build_imgs(_live["show_brand"], _live["custom_text"])
-            _live["img_black"] = blk; _live["img_white"] = wht
+            _live["yuv_black"] = _base_planes(blk); _live["yuv_white"] = _base_planes(wht)
 
 
 # ─── threads de génération ───────────────────────────────────────────────────
@@ -334,7 +372,7 @@ def video_feeder():
     _clk = time.time if GENLOCK else time.monotonic
     next_t = _grid_next(_clk(), period) if GENLOCK else _clk()
     frame_k = _grid_k(time.clock_gettime_ns(time.CLOCK_REALTIME)) + 2 if GENLOCK else 0
-    win_cnt = 0; win_start = time.time()
+    win_cnt = 0; win_start = time.time(); win_render_ns = 0
     while True:
         if GENLOCK:
             _grid_sleep_until(_grid_ns(frame_k))
@@ -345,29 +383,36 @@ def video_feeder():
                 time.sleep(next_t - now); now = _clk()
         with _live_lock:
             beat_sec = _live["beat_sec"]; flash_ms = _live["flash_ms"]
-            img_b = _live["img_black"];   img_w = _live["img_white"]
+            yuv_b = _live["yuv_black"];   yuv_w = _live["yuv_white"]
         el = (next_t if GENLOCK else now) - T0     # instant de présentation (grille en genlock)
         phase = el % beat_sec
         flash = phase < (flash_ms / 1000.0)
         sec = int(el)
         fis = int((el - sec) * FPS)
         bar_x = int((phase / beat_sec) * (WIDTH - 1))
-        _fb = _frame_bytes(flash, sec, fis, bar_x, img_b, img_w)
+        _t_r0 = time.monotonic_ns()
         _i, _gi, _vw = w.open_grain(index=(frame_k if GENLOCK else None))
+        # Rendu 0.10.0 DIRECT dans le grain (zéro-copie) : memcpy du fond YUV précalculé +
+        # patchs barre/compteur — plus de conversion RGB→YUV pleine trame par-frame.
+        _render_into(_vw, flash, sec, fis, bar_x, yuv_b, yuv_w)
         if V_SLICE_H:
-            # MODE TRANCHE : émission par bandes de la trame déjà rendue (commit progressif).
+            # MODE TRANCHE : commit progressif de la trame déjà rendue (bandes 1..N).
             # Même index de grain, même media_ts, même phase flash/bip — seul le commit change.
-            _emit_grain_sliced(w, _gi, _vw, _fb)
+            _commit_sliced(w, _gi)
         else:
-            _vw[:len(_fb)] = np.frombuffer(_fb, dtype=np.uint8)
             w.commit(_gi)
+        win_render_ns += time.monotonic_ns() - _t_r0
         idx += 1
         win_cnt += 1
         _e = time.time() - win_start
         if _e >= 1.0:
             with metrics_lock:
                 metrics["fps"] = round(win_cnt / _e, 1); metrics["frame_index"] = idx
-            win_cnt = 0; win_start = time.time()
+                # own_latency_ms = coût PROPRE rendu+commit par frame (fenêtre glissante).
+                # Aucune attente de cadence/horloge dedans (convention capacité orchestrateur ;
+                # la mire est un générateur : pas de get_slice amont par construction).
+                metrics["own_latency_ms"] = round(win_render_ns / max(1, win_cnt) / 1e6, 2)
+            win_cnt = 0; win_start = time.time(); win_render_ns = 0
         next_t += period
         if next_t < now:
             next_t = (_grid_next(now, period) if GENLOCK else now + period)

@@ -1,0 +1,33 @@
+{
+  "version": "0.9.0",
+  "date": "2026-07-11",
+  "changes": {
+    "Mode tranche MXL (0.9.0)": [
+      "MODE TRANCHE (slice_mode, chantier latence sous-trame) : la mire (déjà rendue, trame complète) est émise PAR BANDES avec commit progressif (validSlices=1..N, pattern delay) quand la sortie est éligible (progressif + hauteur divisible, algo _out_slice_h ; slice_lines=36 pilote la granularité). Le flowDef porte slice_height → l'aval slice-aware démarre sur la 1ʳᵉ bande. Gain propre faible (rendu instantané) — cohérence de chaîne. Audio, timing flash/bip et media_ts STRICTEMENT inchangés (instrument de mesure A/V). Défaut OFF = octet-identique."
+    ],
+    "Ménage (0.8.1)": [
+      "Ménage : retrait des helpers shm/mmap legacy `_open_out`/`_write_video`/`_write_audio` (sans appelant depuis la migration MXL) + imports mmap/struct inutiles. Aucun changement de comportement."
+    ],
+    "Bascule audio MXL (0.8.0)": [
+      "Migration MXL Phase 3 : le bip de calage sort en flux MXL samples float32 (AudioWriter, blocs 1 ms) au lieu du ring shm s24be. REBUILD IMAGE REQUIS."
+    ],
+    "Nouveautés (0.7.0)": [
+      "Migration MXL (Phase 1) : sortie VIDÉO (mire A/V) via bobimxl.Writer (planar, index tai en genlock / libre sinon). AUDIO inchangé (générateur bip legacy mmap, différé Phase 2). Requiert bobi-compute >= 0.5."
+    ],
+    "Nouveautés": [
+      "Cadences FRACTIONNAIRES natives (29.97/59.94/23.976) : la période de sortie est désormais EXACTE (num/den : 29.97→30000/1001, 59.94→60000/1001) au lieu de 1/round(fps) qui dérivait de 0,1 %. _rate_nd() mappe la cadence et accepte la forme 30000/1001 (chaîne). Entier (25/50) inchangé.",
+      "Genlock broadcast : la mire est cadencée sur la grille PTP (CLOCK_REALTIME, disciplinée phc2sys) et son horloge partagée vidéo+audio (flash/bip) passe sur REALTIME → write_ts = instant de grille, flash/bip traçables PTP (la mire devient une référence A/V genlockée valide). Activé par défaut (deploy_defaults.genlock=true), repli monotonic libre si off.",
+      "Exécution sous Docker (runtime compute : image bobi-compute, agent-in-container + réseau macvlan, /dev/shm bind-monté). Le type devient docker-only — créé via Réglages → Déploiement → Nœuds sur un nœud compute (plus de vaisseau LXC). numpy/Pillow déjà présents dans l'image (bobi-compute:0.2), aucun rebuild requis."
+    ],
+    "Nouveautés (0.3.4)": [
+      "Pipeline audio MXL en BIG-ENDIAN wire-native (s24be) : le shm audio porte désormais les octets du fil 2110-30 (plus de conversion). Migration ATOMIQUE de toute la chaîne audio (receiver_2110/sender_2110/streamer/recorder/player + VU multiview + sinus avsync) — à redéployer TOUS ENSEMBLE (un conteneur resté en s24le = audio cassé). Codecs FICHIER (recorder pcm_s24le) inchangés ; sortie 2110-30 sender = passthrough BE."
+    ],
+    "Nouveautés (0.3.3)": [
+      "Profondeur de bits du pipeline shm configurable 8/10/12 bits — pilotée par Réglages → MXL « Profondeur du pipeline shm » (force8 par défaut : 8 bits, comportement inchangé ; suivi du format : frames 10/12 bits stockées sur 16 bits, ×2 mémoire)."
+    ],
+    "Corrections": [
+      "Timestamp de grille en arithmétique entière exacte (_grid_ns/_grid_k/_grid_sleep_until, pattern player) au lieu de int(next_t * 1e9) float → précision nanoseconde, dérive float éliminée."
+    ],
+    "Bugs connus": []
+  }
+}
