@@ -1,7 +1,10 @@
 {
-  "version": "0.8.1",
-  "date": "2026-06-22",
+  "version": "0.9.0",
+  "date": "2026-07-11",
   "changes": {
+    "Mode tranche MXL (0.9.0)": [
+      "MODE TRANCHE (slice_mode, chantier latence sous-trame) : la mire (déjà rendue, trame complète) est émise PAR BANDES avec commit progressif (validSlices=1..N, pattern delay) quand la sortie est éligible (progressif + hauteur divisible, algo _out_slice_h ; slice_lines=36 pilote la granularité). Le flowDef porte slice_height → l'aval slice-aware démarre sur la 1ʳᵉ bande. Gain propre faible (rendu instantané) — cohérence de chaîne. Audio, timing flash/bip et media_ts STRICTEMENT inchangés (instrument de mesure A/V). Défaut OFF = octet-identique."
+    ],
     "Ménage (0.8.1)": [
       "Ménage : retrait des helpers shm/mmap legacy `_open_out`/`_write_video`/`_write_audio` (sans appelant depuis la migration MXL) + imports mmap/struct inutiles. Aucun changement de comportement."
     ],

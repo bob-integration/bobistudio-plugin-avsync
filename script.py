@@ -58,6 +58,17 @@ def _as_bool(v, default=False):
 SHOW_BRAND  = _as_bool(CONFIG.get("show_brand"), default=True)
 CUSTOM_TEXT = str(CONFIG.get("custom_text") or "")
 
+# ── MODE TRANCHE (chantier latence sous-trame, cf. patch mxl-planar-slices) ─────────────────
+# slice_mode=true → la trame RENDUE (déjà complète : le rendu mire est instantané) est émise
+# PAR BANDES avec commit progressif (validSlices=1..N, pattern delay _emit_frame_sliced) →
+# l'aval slice-aware démarre sur la 1ʳᵉ bande. Gain propre faible ici — c'est de la COHÉRENCE
+# de chaîne (une mire tranchée exerce le chemin sous-trame de bout en bout). L'audio, le
+# timing flash/bip et le media_ts sont STRICTEMENT inchangés (instrument de mesure A/V).
+# slice_mode absent/False → comportement octet-identique à l'historique.
+SLICE_MODE  = _as_bool(CONFIG.get("slice_mode"), default=False)
+SLICE_LINES = max(1, int(CONFIG.get("slice_lines") or 36))
+_SLICE_TARGET = max(1, 1080 // SLICE_LINES)
+
 BRAND_NAME = str(CONFIG.get("brand_system_name") or "")
 BRAND_LOC  = str(CONFIG.get("brand_location") or "")
 BRAND_ORG  = str(CONFIG.get("brand_org_name") or "")
@@ -89,6 +100,54 @@ UV_SIZE       = UV_W * UV_H * _BPS
 V_FRAME_SIZE  = Y_SIZE + 2 * UV_SIZE
 V_TOTAL_SIZE  = V_HEADER_SIZE + V_RING_SIZE * V_FRAME_SIZE
 
+def _out_slice_h(oh, ch=1):
+    """MODE TRANCHE — slice_height de la sortie (même algo que delay/pyramide) : le plus petit
+    diviseur sh de oh avec sh ≥ max(1, oh // _SLICE_TARGET), MULTIPLE de ch (lignes chroma
+    entières par bande). Aucun diviseur raisonnable (sh > oh//2) → 0 = inéligible (whole-frame,
+    chemin historique)."""
+    lo = max(1, oh // _SLICE_TARGET)
+    for sh in range(lo, oh // 2 + 1):
+        if oh % sh == 0 and sh % ch == 0:
+            return sh
+    return 0
+
+# Éligibilité tranche : la mire est toujours PROGRESSIVE → seule la divisibilité compte.
+V_SLICE_H = _out_slice_h(HEIGHT, _CH) if SLICE_MODE else 0
+_V_TOTAL_SLICES = (HEIGHT // V_SLICE_H) if V_SLICE_H else 1
+_Y_ROW  = WIDTH * _BPS
+_UV_ROW = UV_W * _BPS
+
+def _copy_band(dst, src, a, b):
+    """MODE TRANCHE — copie IDENTITÉ des lignes image [a, b) sur les 3 plans (Y|Cb|Cr) du
+    payload planar, en OCTETS plats (pattern delay _copy_band). `b` est toujours un multiple
+    de V_SLICE_H (lui-même multiple de _CH) → lignes chroma entières. Renvoie b."""
+    if b <= a:
+        return a
+    dst[a * _Y_ROW:b * _Y_ROW] = src[a * _Y_ROW:b * _Y_ROW]
+    ca = a // _CH; cb = b // _CH
+    if cb > ca:
+        o1 = Y_SIZE; o2 = Y_SIZE + UV_SIZE
+        dst[o1 + ca * _UV_ROW:o1 + cb * _UV_ROW] = src[o1 + ca * _UV_ROW:o1 + cb * _UV_ROW]
+        dst[o2 + ca * _UV_ROW:o2 + cb * _UV_ROW] = src[o2 + ca * _UV_ROW:o2 + cb * _UV_ROW]
+    return b
+
+def _emit_grain_sliced(w, gi, vw, data):
+    """MODE TRANCHE — émet une trame déjà COMPLÈTE dans un grain OUVERT, par bandes + commit
+    progressif (validSlices=1..N, quasi gratuit — pattern delay _emit_frame_sliced). Commit
+    FINAL garanti (un grain laissé partiel ne serait jamais lisible)."""
+    try:
+        src = np.frombuffer(data, dtype=np.uint8)
+        if src.size < V_FRAME_SIZE:
+            vw[:src.size] = src        # frame courte (défensif) : copie pleine, pas de bandes
+            return
+        a = 0
+        for k in range(1, _V_TOTAL_SLICES + 1):
+            a = _copy_band(vw, src, a, min(HEIGHT, k * V_SLICE_H))
+            if k < _V_TOTAL_SLICES:
+                w.commit(gi, valid_slices=k)   # réveille l'aval à chaque bande
+    finally:
+        w.commit(gi, valid_slices=None)
+
 A_SAMPLE_RATE = 48000
 A_CHANNELS    = 8
 A_HEADER_SIZE = 64
@@ -101,7 +160,8 @@ AUDIO_SHM = HOSTNAME + "_audio"
 inst = bobimxl.Instance()   # domaine MXL ($MXL_DOMAIN ou /dev/shm/mxl) — sortie vidéo
 
 metrics_lock = threading.Lock()
-metrics = {{"fps": 0.0, "frame_index": 0, "playing": True, "plugin_version": PLUGIN_VERSION}}
+metrics = {{"fps": 0.0, "frame_index": 0, "playing": True,
+            "slice_mode": bool(V_SLICE_H), "plugin_version": PLUGIN_VERSION}}
 
 # Genlock broadcast : origine d'horloge PARTAGÉE vidéo+audio sur l'horloge REALTIME (CLOCK_REALTIME,
 # disciplinée PTP par phc2sys) → flash/bip alignés ET traçables PTP ; la sortie est cadencée sur la
@@ -260,8 +320,15 @@ def _apply_live(patch):
 
 # ─── threads de génération ───────────────────────────────────────────────────
 def video_feeder():
+    # MODE TRANCHE : le flowDef porte slice_height quand éligible (progressif + divisible) →
+    # grain publié en N tranches égales ; sinon flowDef inchangé (historique octet-identique).
     w = bobimxl.Writer(inst, VIDEO_SHM, WIDTH, HEIGHT, CHROMA, BIT_DEPTH, FPS_NUM, FPS_DEN,
-                       index_mode=("tai" if GENLOCK else "free"))
+                       index_mode=("tai" if GENLOCK else "free"),
+                       **({{"slice_height": V_SLICE_H}} if V_SLICE_H else {{}}))
+    if SLICE_MODE:
+        print("slice_mode %s : sortie %s %s" % ("actif" if V_SLICE_H else "INÉLIGIBLE",
+              VIDEO_SHM, ("tranchée par %d lignes (%d tranches)" % (V_SLICE_H, _V_TOTAL_SLICES))
+              if V_SLICE_H else "(hauteur %d sans diviseur) → chemin historique" % HEIGHT))
     idx = 1
     period = FPS_DEN / FPS_NUM
     _clk = time.time if GENLOCK else time.monotonic
@@ -287,8 +354,14 @@ def video_feeder():
         bar_x = int((phase / beat_sec) * (WIDTH - 1))
         _fb = _frame_bytes(flash, sec, fis, bar_x, img_b, img_w)
         _i, _gi, _vw = w.open_grain(index=(frame_k if GENLOCK else None))
-        _vw[:len(_fb)] = np.frombuffer(_fb, dtype=np.uint8)
-        w.commit(_gi); idx += 1
+        if V_SLICE_H:
+            # MODE TRANCHE : émission par bandes de la trame déjà rendue (commit progressif).
+            # Même index de grain, même media_ts, même phase flash/bip — seul le commit change.
+            _emit_grain_sliced(w, _gi, _vw, _fb)
+        else:
+            _vw[:len(_fb)] = np.frombuffer(_fb, dtype=np.uint8)
+            w.commit(_gi)
+        idx += 1
         win_cnt += 1
         _e = time.time() - win_start
         if _e >= 1.0:
