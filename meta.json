@@ -1,7 +1,10 @@
 {
-  "version": "0.10.0",
-  "date": "2026-07-11",
+  "version": "0.10.1",
+  "date": "2026-07-12",
   "changes": {
+    "Réglages mode tranche (0.10.1)": [
+      "Exposition des réglages du mode tranche dans le panneau ⚙ Réglages et la palette (config_schema, scope system) : slice_mode, slice_lines. Schéma/UI seulement — aucun changement de comportement du script."
+    ],
     "Performance rendu (0.10.0)": [
       "PERF : le rendu de la mire ne convertit plus la trame RGB→YUV en float pleine trame à chaque frame (hotspot mesuré : ~68 ms/frame @1080p, fps plafonné ~12). Les fonds noir/flash (avec overlay) sont précalculés en YUV planar (boot + changement show_brand/custom_text) ; par-frame il ne reste que : 1 memcpy du fond DIRECTEMENT dans le grain MXL (zéro-copie via open_grain), le patch de la barre de balayage par vues stridées, et le blend entier du compteur limité à son bbox (masque alpha PIL petit format, ÷255 exact *257>>16). Mesuré hors-ligne : 80,2 → 3,8 ms/frame @1080p50 4:2:2 (~21×). Sortie visuellement identique (écart ≤ 2 codes sur les bords anti-aliasés uniquement).",
       "Mode tranche : plus de copie par bandes (le grain est rendu en place) — seul reste le commit progressif validSlices=1..N (_commit_sliced).",
