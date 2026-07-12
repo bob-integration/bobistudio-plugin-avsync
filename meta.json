@@ -1,7 +1,16 @@
 {
-  "version": "0.10.2",
+  "version": "0.11.0",
   "date": "2026-07-12",
   "changes": {
+    "Générateur de timecode optionnel (0.11.0)": [
+      "Nouveau réglage `tc_enable` (défaut OFF, panneau ⚙) : la mire affiche le TIMECODE heure du jour (hh:mm:ss:img, même horloge de présentation que la trame — grille PTP en genlock) À LA PLACE du compteur sec.frame (pas de doublon de chiffres ; police ajustée au boot pour tenir en largeur ; le compteur revient dès que l'option est coupée), ET émet un flux ANC `<hostname>_anc` portant un paquet ATC RP 188 par trame (RFC 8331, motif player), écrit AU MÊME INDEX DE GRAIN que la vidéo → TC↔image parfaitement alignés chez les consommateurs (multiview : horloge ANC / bandeau ANC).",
+      "Port « TC (ANC) » sur la page Câbles UNIQUEMENT quand l'option est active (produce wiring conditionnel `repeat: tc_enable`) — câblable ex. vers le port ANC d'une fenêtre de multiview.",
+      "Coût nul désactivé ; activé, le rendu du TC réutilise le blend local du compteur (masque PIL petit format). Une erreur d'écriture ANC ne casse jamais la cadence de la mire.",
+      "Refactor : le blend texte du compteur est extrait en helper partagé (_blend_text) — opérations identiques, sortie octet-identique.",
+      "Interrupteur « Générateur de timecode » sur la CARTE DE CONTRÔLE (section Affichage), appliqué À CHAUD (/config, clé soft) : writer ANC créé paresseusement à la première activation (retentes 1/s), coupé du flux à la désactivation. L'état persiste dans les params (control_action) → le port « TC (ANC) » suit sur la page Câbles.",
+      "FIX : le select « Résolution » de la section Format retombait sur la PREMIÈRE entrée de la palette (ex. 1080i50) quand aucun preset ne matchait le format réel du container — il affiche désormais une option synthétique « WxH @fps (actuel) » sélectionnée (Appliquer sans changement = no-op).",
+      "TC en HEURE CIVILE LOCALE : before_deploy injecte le fuseau du contrôleur (tz — images runtime en UTC) ET l'offset TAI→UTC de l'horloge du nœud (app.ptp.civil_clock_params : mesuré contre le contrôleur NTP, arrondi seconde entière, cache 1 h — l'horloge des nœuds est sur l'échelle PTP/TAI par conception et n'est PAS recalée). Vérifié à la seconde près contre l'heure du contrôleur."
+    ],
     "Masquage UI mode tranche (0.10.2)": [
       "Clés du mode tranche (slice_mode, slice_lines) marquées hidden:true dans le config_schema : plus rendues dans la palette ni le panneau ⚙ — pilotage par le réglage global Réglages → Vidéo « Mode tranche » (slice_mode_global). Les clés restent dans le schéma : coercion, déploiement et API inchangés."
     ],

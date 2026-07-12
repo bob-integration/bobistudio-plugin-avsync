@@ -8,7 +8,7 @@
     "class": "mode-corrector",
     "oklch": "0.80 0.05 110"
   },
-  "version": "0.10.2",
+  "version": "0.11.0",
   "description": "Générateur de test de synchronisation image/son : flash plein écran + bip synchrones, compteur, barre de balayage, et overlay personnalisable (logo entreprise, nom du système, localisation, format vidéo, texte libre).",
   "nav": {
     "section": "sources",
@@ -32,7 +32,8 @@
     "tone_hz": 1000,
     "show_brand": true,
     "custom_text": "",
-    "genlock": true
+    "genlock": true,
+    "tc_enable": false
   },
   "config_schema": [
     {
@@ -114,6 +115,14 @@
       "scope": "user"
     },
     {
+      "key": "tc_enable",
+      "type": "bool",
+      "label": "Générateur de timecode (incrusté + flux ANC)",
+      "help": "Incruste le timecode (heure du jour, hh:mm:ss:img) sous le compteur ET émet un flux ANC ATC RP 188 (RFC 8331) câblable — ex. vers le port ANC d'une fenêtre de multiview.",
+      "default": false,
+      "scope": "user"
+    },
+    {
       "key": "custom_text",
       "type": "text",
       "label": "Texte personnalisé",
@@ -162,6 +171,12 @@
         "essence": "audio",
         "shm": "{hostname}_audio",
         "label": "Audio"
+      },
+      {
+        "essence": "data",
+        "shm": "{hostname}_anc",
+        "label": "TC (ANC)",
+        "repeat": "tc_enable"
       }
     ],
     "consumes": [],

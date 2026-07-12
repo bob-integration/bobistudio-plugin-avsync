@@ -57,6 +57,26 @@ def _as_bool(v, default=False):
     return bool(v)
 SHOW_BRAND  = _as_bool(CONFIG.get("show_brand"), default=True)
 CUSTOM_TEXT = str(CONFIG.get("custom_text") or "")
+# ── Générateur de TIMECODE (option) : heure du jour (même horloge de présentation que la
+# trame — grille PTP en genlock) incrustée sous le compteur ET émise en flux ANC ATC RP 188
+# (RFC 8331, motif player) sur `<hostname>_anc`, à l'index de grain de la vidéo → un multiview
+# câblé dessus affiche le TC exactement aligné sur l'image. Désactivé par défaut (coût nul).
+TC_ENABLE = _as_bool(CONFIG.get("tc_enable"), default=False)
+# Fuseau horaire injecté par le hook before_deploy (les images runtime sont en UTC) : le
+# timecode affiche l'HEURE LOCALE de la régie. Sans tz → heure du container (UTC).
+TZ_NAME = str(CONFIG.get("tz") or "").strip()
+if TZ_NAME:
+    os.environ["TZ"] = TZ_NAME
+    try:
+        time.tzset()
+    except Exception:
+        pass
+# Horloge du nœud = échelle PTP (TAI, cf. PTP_CLOCK.md) : l'heure CIVILE affichée = horloge
+# − tai_utc_offset_s (mesuré et injecté par before_deploy ; 0 si nœud en heure civile).
+try:
+    TAI_UTC_OFFSET_S = max(0, int(CONFIG.get("tai_utc_offset_s") or 0))
+except (TypeError, ValueError):
+    TAI_UTC_OFFSET_S = 0
 
 # ── MODE TRANCHE (chantier latence sous-trame, cf. patch mxl-planar-slices) ─────────────────
 # slice_mode=true → la trame RENDUE (déjà complète : le rendu mire est instantané) est émise
@@ -135,6 +155,7 @@ A_TOTAL_SIZE  = A_HEADER_SIZE + A_RING_SIZE * A_CHUNK_SIZE
 
 VIDEO_SHM = HOSTNAME
 AUDIO_SHM = HOSTNAME + "_audio"
+ANC_SHM   = HOSTNAME + "_anc"    # flux ANC du générateur de timecode (option tc_enable)
 inst = bobimxl.Instance()   # domaine MXL ($MXL_DOMAIN ou /dev/shm/mxl) — sortie vidéo
 
 metrics_lock = threading.Lock()
@@ -203,6 +224,19 @@ def _font(px):
 
 FONT_BIG = _font(HEIGHT // 5)
 FONT_MED = _font(max(14, HEIGHT // 26))
+def _fit_font(sample, start_px, max_w):
+    """Plus grande police (≤ start_px) dont `sample` tient dans max_w px."""
+    px = start_px
+    while px > 12:
+        f = _font(px)
+        try:
+            bb = _probe.textbbox((0, 0), sample, font=f)
+            if bb[2] - bb[0] <= max_w:
+                return f
+        except Exception:
+            return f
+        px = int(px * 0.9)
+    return _font(12)
 _probe = ImageDraw.Draw(Image.new("RGB", (8, 8)))
 def _tsize(txt, font):
     try:
@@ -210,6 +244,10 @@ def _tsize(txt, font):
         return bb[2] - bb[0], bb[3] - bb[1]
     except Exception:
         return (len(txt) * 8, 12)
+
+# Timecode : REMPLACE le compteur quand le générateur est actif (pas de doublon de chiffres).
+# Police ajustée au boot pour que hh:mm:ss:img tienne dans 90 % de la largeur.
+FONT_TC = _fit_font("00:00:00:00", HEIGHT // 5, int(WIDTH * 0.9))
 
 
 # ─── logo (base64 injecté au déploiement) ────────────────────────────────────
@@ -274,7 +312,7 @@ def _blend_region(plane, y0, y1, x0, x1, alpha, cval):
     plane[y0:y1, x0:x1] = (((a * cval + (255 - a) * bg + 128) * 257) >> 16).astype(plane.dtype)
 
 
-def _render_into(vw, flash, sec, fis, bar_x, yuv_black=None, yuv_white=None):
+def _render_into(vw, flash, sec, fis, bar_x, yuv_black=None, yuv_white=None, tc_txt=None):
     """Rend la mire DIRECTEMENT dans le grain MXL (zéro-copie) :
     1 memcpy du fond précalculé + patch de la barre (vues stridées, pas de gather) + blend du
     compteur en YUV sur son seul bbox (masque alpha PIL petit format). Sortie visuellement
@@ -294,28 +332,41 @@ def _render_into(vw, flash, sec, fis, bar_x, yuv_black=None, yuv_white=None):
     cx0 = (bar_x + _CW - 1) // _CW; cx1 = (x1 + _CW - 1) // _CW
     U[:, cx0:cx1] = BAR_YUV[1]; V[:, cx0:cx1] = BAR_YUV[2]
     # compteur centré sec.frame : masque alpha rendu sur une petite image L, blend local
-    txt = "%d.%02d" % (sec, fis)
-    bb = _probe.textbbox((0, 0), txt, font=FONT_BIG)
-    tw, th = bb[2] - bb[0], bb[3] - bb[1]
-    px, py = (WIDTH - tw) // 2, (HEIGHT - th) // 2
-    mask = Image.new("L", (bb[2] + 2, bb[3] + 2), 0)
-    ImageDraw.Draw(mask).text((0, 0), txt, font=FONT_BIG, fill=255)
-    a = np.asarray(mask)
-    gx0 = max(0, px); gy0 = max(0, py)
-    gx0 -= gx0 % _CW; gy0 -= gy0 % _CH                 # région alignée chroma
-    gx1 = min(WIDTH, px + a.shape[1]);  gx1 = min(WIDTH, gx1 + (-gx1) % _CW)
-    gy1 = min(HEIGHT, py + a.shape[0]); gy1 = min(HEIGHT, gy1 + (-gy1) % _CH)
-    reg = np.zeros((gy1 - gy0, gx1 - gx0), dtype=np.uint8)
-    y_lo = max(gy0, py); y_hi = min(gy1, py + a.shape[0])
-    x_lo = max(gx0, px); x_hi = min(gx1, px + a.shape[1])
-    if y_hi > y_lo and x_hi > x_lo:
-        reg[y_lo - gy0:y_hi - gy0, x_lo - gx0:x_hi - gx0] = a[y_lo - py:y_hi - py,
-                                                              x_lo - px:x_hi - px]
-    cy, cu, cv = TXT_YUV_ON_FLASH if flash else TXT_YUV_ON_BLACK
-    _blend_region(Y, gy0, gy1, gx0, gx1, reg, cy)
-    ac = reg[::_CH, ::_CW]
-    _blend_region(U, gy0 // _CH, gy1 // _CH, gx0 // _CW, gx1 // _CW, ac, cu)
-    _blend_region(V, gy0 // _CH, gy1 // _CH, gx0 // _CW, gx1 // _CW, ac, cv)
+    # (helper partagé avec le timecode incrusté — mêmes opérations, octet-identique)
+    def _blend_text(txt, font, px, py):
+        bb = _probe.textbbox((0, 0), txt, font=font)
+        mask = Image.new("L", (bb[2] + 2, bb[3] + 2), 0)
+        ImageDraw.Draw(mask).text((0, 0), txt, font=font, fill=255)
+        a = np.asarray(mask)
+        gx0 = max(0, px); gy0 = max(0, py)
+        gx0 -= gx0 % _CW; gy0 -= gy0 % _CH             # région alignée chroma
+        gx1 = min(WIDTH, px + a.shape[1]);  gx1 = min(WIDTH, gx1 + (-gx1) % _CW)
+        gy1 = min(HEIGHT, py + a.shape[0]); gy1 = min(HEIGHT, gy1 + (-gy1) % _CH)
+        if gx1 <= gx0 or gy1 <= gy0:
+            return
+        reg = np.zeros((gy1 - gy0, gx1 - gx0), dtype=np.uint8)
+        y_lo = max(gy0, py); y_hi = min(gy1, py + a.shape[0])
+        x_lo = max(gx0, px); x_hi = min(gx1, px + a.shape[1])
+        if y_hi > y_lo and x_hi > x_lo:
+            reg[y_lo - gy0:y_hi - gy0, x_lo - gx0:x_hi - gx0] = a[y_lo - py:y_hi - py,
+                                                                  x_lo - px:x_hi - px]
+        cy, cu, cv = TXT_YUV_ON_FLASH if flash else TXT_YUV_ON_BLACK
+        _blend_region(Y, gy0, gy1, gx0, gx1, reg, cy)
+        ac = reg[::_CH, ::_CW]
+        _blend_region(U, gy0 // _CH, gy1 // _CH, gx0 // _CW, gx1 // _CW, ac, cu)
+        _blend_region(V, gy0 // _CH, gy1 // _CH, gx0 // _CW, gx1 // _CW, ac, cv)
+
+    # Générateur de timecode ACTIF → le TC (hh:mm:ss:img, même valeur que le grain ANC émis à
+    # cet index) REMPLACE le compteur sec.frame (pas de doublon de chiffres à l'image).
+    if tc_txt:
+        tb = _probe.textbbox((0, 0), tc_txt, font=FONT_TC)
+        ttw, tth = tb[2] - tb[0], tb[3] - tb[1]
+        _blend_text(tc_txt, FONT_TC, (WIDTH - ttw) // 2, (HEIGHT - tth) // 2)
+    else:
+        txt = "%d.%02d" % (sec, fis)
+        bb = _probe.textbbox((0, 0), txt, font=FONT_BIG)
+        tw, th = bb[2] - bb[0], bb[3] - bb[1]
+        _blend_text(txt, FONT_BIG, (WIDTH - tw) // 2, (HEIGHT - th) // 2)
 
 
 # ─── bip audio : blocs de 1 ms pré-calculés (sinus float32 8ch) — flux MXL ──
@@ -339,7 +390,7 @@ BEAT_MS = max(1, int(round(BEAT_SEC * 1000)))
 _live_lock = threading.Lock()
 _live = {{
     "beat_sec": BEAT_SEC, "flash_ms": int(FLASH_MS), "tone_hz": float(TONE_HZ),
-    "show_brand": SHOW_BRAND, "custom_text": CUSTOM_TEXT,
+    "show_brand": SHOW_BRAND, "custom_text": CUSTOM_TEXT, "tc_enable": TC_ENABLE,
     "beep": BEEP, "beat_ms": BEAT_MS, "yuv_black": YUV_BLACK, "yuv_white": YUV_WHITE,
 }}
 
@@ -367,6 +418,11 @@ def video_feeder():
         print("slice_mode %s : sortie %s %s" % ("actif" if V_SLICE_H else "INÉLIGIBLE",
               VIDEO_SHM, ("tranchée par %d lignes (%d tranches)" % (V_SLICE_H, _V_TOTAL_SLICES))
               if V_SLICE_H else "(hauteur %d sans diviseur) → chemin historique" % HEIGHT))
+    # Générateur de timecode (option, togglable À CHAUD via /config) : flux ANC data
+    # `<hostname>_anc` (RFC 8331, un paquet ATC RP 188 par trame), écrit À L'INDEX DU GRAIN
+    # VIDÉO (alignement TC↔image parfait en genlock). Writer créé PARESSEUSEMENT à la première
+    # activation (retentes throttlées à 1/s en cas d'échec).
+    wa = None; _wa_try = 0.0
     idx = 1
     period = FPS_DEN / FPS_NUM
     _clk = time.time if GENLOCK else time.monotonic
@@ -384,23 +440,58 @@ def video_feeder():
         with _live_lock:
             beat_sec = _live["beat_sec"]; flash_ms = _live["flash_ms"]
             yuv_b = _live["yuv_black"];   yuv_w = _live["yuv_white"]
+            tc_on = bool(_live["tc_enable"])
         el = (next_t if GENLOCK else now) - T0     # instant de présentation (grille en genlock)
         phase = el % beat_sec
         flash = phase < (flash_ms / 1000.0)
         sec = int(el)
         fis = int((el - sec) * FPS)
         bar_x = int((phase / beat_sec) * (WIDTH - 1))
+        # Timecode (option) : HEURE DU JOUR à l'instant de présentation de la trame (grille PTP
+        # en genlock, horloge murale sinon) → hh:mm:ss:img. Même valeur incrustée ET émise ANC.
+        tc = None; tc_txt = None
+        if tc_on and wa is None and time.monotonic() - _wa_try > 1.0:
+            _wa_try = time.monotonic()
+            try:
+                wa = bobimxl.Writer(inst, ANC_SHM, 0, 0,
+                                    index_mode=("tai" if GENLOCK else "free"),
+                                    flow_def=bobimxl.build_data_flow_def(ANC_SHM, FPS_NUM, FPS_DEN))
+                print("timecode: flux ANC %s actif (ATC RP 188, RFC 8331)" % ANC_SHM)
+            except Exception as e:
+                print("timecode: flux ANC indisponible (%s) — incrustation seule" % e)
+        if tc_on:
+            _tp = next_t if GENLOCK else time.time()
+            # HEURE CIVILE LOCALE : horloge nœud (TAI) − offset TAI→UTC, puis fuseau (TZ_NAME).
+            _civ = _tp - TAI_UTC_OFFSET_S
+            _lt = time.localtime(_civ)
+            _fr = int((_civ % 1.0) * FPS_NUM / FPS_DEN) % FPS
+            tc = (_lt.tm_hour, _lt.tm_min, _lt.tm_sec, _fr)
+            tc_txt = "%02d:%02d:%02d:%02d" % tc
         _t_r0 = time.monotonic_ns()
         _i, _gi, _vw = w.open_grain(index=(frame_k if GENLOCK else None))
         # Rendu 0.10.0 DIRECT dans le grain (zéro-copie) : memcpy du fond YUV précalculé +
         # patchs barre/compteur — plus de conversion RGB→YUV pleine trame par-frame.
-        _render_into(_vw, flash, sec, fis, bar_x, yuv_b, yuv_w)
+        _render_into(_vw, flash, sec, fis, bar_x, yuv_b, yuv_w, tc_txt=tc_txt)
         if V_SLICE_H:
             # MODE TRANCHE : commit progressif de la trame déjà rendue (bandes 1..N).
             # Même index de grain, même media_ts, même phase flash/bip — seul le commit change.
             _commit_sliced(w, _gi)
         else:
             w.commit(_gi)
+        # Grain ANC du timecode, au MÊME index que la vidéo (paquet ATC RP 188, RFC 8331).
+        # Cosmétique/diagnostic → ne jamais casser la cadence de la mire si l'écriture échoue.
+        if tc_on and wa is not None and tc is not None:
+            try:
+                _blob = bobimxl.anc_pack_rfc8331(
+                    [{{"did": 0x60, "sdid": 0x60, "line": 9, "hori": 0xFFF,
+                       "udw": bobimxl.anc_atc_encode(tc[0], tc[1], tc[2], tc[3])}}])
+                _ai, _agi, _avw = wa.open_grain(index=(frame_k if GENLOCK else None))
+                _src = np.frombuffer(_blob, dtype=np.uint8)
+                _n = min(_src.size, _avw.size)
+                _avw[:_n] = _src[:_n]
+                wa.commit(_agi)
+            except Exception:
+                pass
         win_render_ns += time.monotonic_ns() - _t_r0
         idx += 1
         win_cnt += 1
@@ -464,6 +555,8 @@ class ControlHandler(BaseHTTPRequestHandler):
             with metrics_lock: m = dict(metrics)
             with _live_lock: lv = dict(_live)
             s = {{"video_shm": VIDEO_SHM, "audio_shm": AUDIO_SHM,
+                  "anc_shm": ANC_SHM if lv["tc_enable"] else None,   # générateur de timecode
+                  "tc_enable": bool(lv["tc_enable"]),
                   "width": WIDTH, "height": HEIGHT, "fps": FPS, "chroma": CHROMA,
                   "format": FORMAT_STR,
                   "beat_sec": lv["beat_sec"], "flash_ms": lv["flash_ms"],
@@ -491,6 +584,7 @@ class ControlHandler(BaseHTTPRequestHandler):
             "tone_hz":  lambda v: float(v),
             "show_brand": lambda v: bool(v),
             "custom_text": lambda v: str(v),
+            "tc_enable": lambda v: bool(v),
         }}
         patch = {{}}
         for k, cast in _validators.items():

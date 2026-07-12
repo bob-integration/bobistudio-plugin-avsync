@@ -61,11 +61,19 @@ window.MXLPlugins["avsync"] = {
         `<option value="${i}">${esc(f.label)}</option>`
       ).join('');
 
-      // Sélectionner le format courant
+      // Sélectionner le format courant. Aucun preset ne matche (format hors palette) →
+      // option synthétique « (actuel) » sélectionnée, plutôt que de laisser le select sur la
+      // PREMIÈRE entrée de la palette (qui affichait un format mensonger, ex. 1080i50 pour
+      // une mire 720p25).
       if (currentW && currentH && currentFps) {
         const idx = _formats.findIndex(f => f.w === currentW && f.h === currentH
           && Math.round(f.fps) === Math.round(currentFps));
         if (idx >= 0) presetSel.value = String(idx);
+        else {
+          presetSel.insertAdjacentHTML('afterbegin',
+            `<option value="cur">${esc(`${currentW}×${currentH} @${currentFps} (actuel)`)}</option>`);
+          presetSel.value = 'cur';
+        }
       }
     }
 
@@ -86,7 +94,7 @@ window.MXLPlugins["avsync"] = {
     const GROUP_FIELDS = {
       fmt:  ['fmt_preset', 'chroma'],
       av:   [...el.querySelectorAll('.avs-knob[data-name]')].map(k => k.dataset.name),
-      disp: ['show_brand', 'custom_text'],
+      disp: ['show_brand', 'custom_text', 'tc_enable'],
     };
     let _fmtLoaded = false;
 
@@ -94,6 +102,9 @@ window.MXLPlugins["avsync"] = {
       const set = (name, val) => {
         const f = el.querySelector(`[name="${name}"]`);
         if (!f || _dirty.has(name) || document.activeElement === f) return;
+        // Clé ABSENTE du /state (script plus ancien que l'UI) : ne pas resynchroniser le champ
+        // — sinon un toggle appliqué « ok » se décoche tout seul au polling suivant.
+        if (val === undefined) return;
         if (f.type === 'checkbox') f.checked = Boolean(val);
         else f.value = val != null ? val : '';
       };
@@ -113,6 +124,7 @@ window.MXLPlugins["avsync"] = {
       });
       set('show_brand', s.show_brand);
       set('custom_text',s.custom_text);
+      set('tc_enable',  s.tc_enable);
     }
 
     // toute saisie utilisateur marque le champ dirty (protégé du refresh jusqu'à Appliquer)
@@ -248,6 +260,8 @@ window.MXLPlugins["avsync"] = {
       if (chk) body.show_brand = chk.checked;
       const txt = el.querySelector('[name="custom_text"]');
       if (txt) body.custom_text = txt.value;
+      const tce = el.querySelector('[name="tc_enable"]');
+      if (tce) body.tc_enable = tce.checked;
       return body;
     }
 

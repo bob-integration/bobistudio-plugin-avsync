@@ -4,7 +4,22 @@
 # Distribué sous licence GNU GPL v3 (ou ultérieure) ; voir le fichier LICENSE.
 
 _FORMAT_KEYS = frozenset(("width", "height", "fps", "chroma"))
-_SOFT_KEYS   = frozenset(("beat_sec", "flash_ms", "tone_hz", "show_brand", "custom_text"))
+_SOFT_KEYS   = frozenset(("beat_sec", "flash_ms", "tone_hz", "show_brand", "custom_text",
+                          "tc_enable"))
+
+
+def before_deploy(params, context):
+    """Injecte l'HEURE CIVILE pour le générateur de timecode : fuseau du contrôleur (`tz` —
+    les images runtime sont en UTC) + `tai_utc_offset_s` (l'horloge des nœuds est disciplinée
+    sur l'échelle PTP/TAI par conception, cf. PTP_CLOCK.md : l'heure civile = horloge nœud −
+    offset, MESURÉ contre le contrôleur NTP — jamais 37 figé, robuste aux leap seconds).
+    Ré-évalué à CHAQUE déploiement (mesure fraîche, cache 1 h par nœud)."""
+    try:
+        from app.ptp import civil_clock_params
+        params.update(civil_clock_params(context.get("vmid")))
+    except Exception:
+        pass
+    return params
 
 
 def control_action(action, body, params, ctx):
