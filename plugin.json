@@ -8,7 +8,7 @@
     "class": "mode-corrector",
     "oklch": "0.80 0.05 110"
   },
-  "version": "0.11.0",
+  "version": "0.12.0",
   "description": "Générateur de test de synchronisation image/son : flash plein écran + bip synchrones, compteur, barre de balayage, et overlay personnalisable (logo entreprise, nom du système, localisation, format vidéo, texte libre).",
   "nav": {
     "section": "sources",
@@ -32,6 +32,7 @@
     "tone_hz": 1000,
     "show_brand": true,
     "custom_text": "",
+    "font": "dejavu-sans-bold",
     "genlock": true,
     "tc_enable": false
   },
@@ -127,6 +128,14 @@
       "type": "text",
       "label": "Texte personnalisé",
       "placeholder": "ex. Banc d'essai — Régie A",
+      "scope": "user"
+    },
+    {
+      "key": "font",
+      "type": "text",
+      "label": "Police (habillage + timecode)",
+      "help": "Alimenté par le sélecteur BobiFonts (polices d'image + bibliothèque). Changer la police redéploie le conteneur (nécessaire pour embarquer les octets d'une police de la bibliothèque — rootfs éphémère).",
+      "default": "dejavu-sans-bold",
       "scope": "user"
     },
     {

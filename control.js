@@ -95,8 +95,22 @@ window.MXLPlugins["avsync"] = {
       fmt:  ['fmt_preset', 'chroma'],
       av:   [...el.querySelectorAll('.avs-knob[data-name]')].map(k => k.dataset.name),
       disp: ['show_brand', 'custom_text', 'tc_enable'],
+      font: ['font'],
     };
     let _fmtLoaded = false;
+
+    // ─── Sélecteur de police (Réglages → Polices, bibliothèque incluse) ───────
+    // Alimenté par le helper partagé window.BobiFonts (groupes « Polices système » /
+    // « Bibliothèque ») — même motif que le composer multiview. Peuplé une seule fois
+    // (resynchronisé après un Appliquer du groupe font, comme fmt_preset).
+    let _fontLoaded = false;
+    function loadFontSelect(current) {
+      const sel = el.querySelector('[name="font"]');
+      if (!sel || !window.BobiFonts) return;
+      window.BobiFonts.load().then(() => {
+        window.BobiFonts.fillSelect(sel, current || 'dejavu-sans-bold');
+      }).catch(() => { /* catalogue indisponible : select laissé vide, retenté au refresh */ });
+    }
 
     function fillForm(s) {
       const set = (name, val) => {
@@ -125,6 +139,10 @@ window.MXLPlugins["avsync"] = {
       set('show_brand', s.show_brand);
       set('custom_text',s.custom_text);
       set('tc_enable',  s.tc_enable);
+      if (!_fontLoaded && !_dirty.has('font')) {
+        _fontLoaded = true;
+        loadFontSelect(s.font);
+      }
     }
 
     // toute saisie utilisateur marque le champ dirty (protégé du refresh jusqu'à Appliquer)
@@ -254,6 +272,10 @@ window.MXLPlugins["avsync"] = {
         });
         return body;
       }
+      if (group === 'font') {
+        const sel = el.querySelector('[name="font"]');
+        return sel && sel.value ? { font: sel.value } : {};
+      }
       // disp
       const body = {};
       const chk = el.querySelector('[name="show_brand"]');
@@ -268,6 +290,7 @@ window.MXLPlugins["avsync"] = {
     function _clearDirty(group) {
       (GROUP_FIELDS[group] || []).forEach(n => _dirty.delete(n));
       if (group === 'fmt') _fmtLoaded = false;   // resélectionner le preset au prochain refresh
+      if (group === 'font') _fontLoaded = false; // resynchro la police au prochain refresh
     }
 
     function feedback(group, msg, ok) {

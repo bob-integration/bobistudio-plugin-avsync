@@ -1,7 +1,12 @@
 {
-  "version": "0.11.0",
-  "date": "2026-07-12",
+  "version": "0.12.0",
+  "date": "2026-07-14",
   "changes": {
+    "Bibliothèque de polices (0.12.0)": [
+      "Nouveau réglage `font` (panneau ⚙, redéploiement) : l'habillage (marque + format + texte personnalisé) ET le générateur de timecode utilisent désormais la police choisie — polices d'image (DejaVu/Liberation/Inter/Roboto/Fira Code, mêmes chemins que le multiview, image compute partagée) ET polices de la BIBLIOTHÈQUE orchestrateur (Réglages → Polices, clé `lib:<sha16>`) via le sélecteur partagé window.BobiFonts (carte de contrôle, section « Police »).",
+      "Motif de matérialisation ÉPROUVÉ du multiview, dupliqué tel quel (le script de plugin est autonome, ne peut pas importer l'orchestrateur) : `CONFIG[\"font_library\"]` (injecté au déploiement par app/fonts.resolve_params, base64, polices RÉELLEMENT référencées seulement) est rematérialisé sur disque local (rootfs éphémère) à chaque démarrage, validé par un chargement Pillow réel — police illisible ou clé inconnue → repli DejaVu + log, jamais de crash.",
+      "`font` est un champ STRUCTUREL (comme width/height/fps/chroma) : un changement redéploie le conteneur — seul moyen d'embarquer les octets d'une police de bibliothèque (aucun état n'est persisté côté conteneur, cf. hooks.py _FORMAT_KEYS)."
+    ],
     "Générateur de timecode optionnel (0.11.0)": [
       "Nouveau réglage `tc_enable` (défaut OFF, panneau ⚙) : la mire affiche le TIMECODE heure du jour (hh:mm:ss:img, même horloge de présentation que la trame — grille PTP en genlock) À LA PLACE du compteur sec.frame (pas de doublon de chiffres ; police ajustée au boot pour tenir en largeur ; le compteur revient dès que l'option est coupée), ET émet un flux ANC `<hostname>_anc` portant un paquet ATC RP 188 par trame (RFC 8331, motif player), écrit AU MÊME INDEX DE GRAIN que la vidéo → TC↔image parfaitement alignés chez les consommateurs (multiview : horloge ANC / bandeau ANC).",
       "Port « TC (ANC) » sur la page Câbles UNIQUEMENT quand l'option est active (produce wiring conditionnel `repeat: tc_enable`) — câblable ex. vers le port ANC d'une fenêtre de multiview.",

@@ -212,8 +212,89 @@ TXT_YUV_ON_FLASH = _yuv_const(10, 10, 10)
 
 
 # ─── polices ─────────────────────────────────────────────────────────────────
+# Catalogue des polices EMBARQUÉES dans l'image runtime (bloc dupliqué, ASSUMÉ, du multiview —
+# `plugins/<type>/script.py` est autonome et ne peut pas importer de code de l'orchestrateur ;
+# même image compute (cf. _compute_runtime/Dockerfile fonts-dejavu-core/liberation/inter/roboto/
+# firacode) donc mêmes chemins). Chaque clé → liste de chemins candidats.
+_FONT_FILES = {{
+    "dejavu-sans":          ["/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"],
+    "dejavu-sans-bold":     ["/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"],
+    "dejavu-serif":         ["/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf"],
+    "dejavu-mono":          ["/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"],
+    "liberation-sans":      ["/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"],
+    "liberation-sans-bold": ["/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"],
+    "liberation-mono":      ["/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf"],
+    "inter":    ["/usr/share/fonts/truetype/inter/Inter-Regular.otf",
+                 "/usr/share/fonts/opentype/inter/Inter-Regular.otf",
+                 "/usr/share/fonts/truetype/inter/InterVariable.ttf"],
+    "roboto":   ["/usr/share/fonts/truetype/roboto/unhinted/Roboto-Regular.ttf",
+                 "/usr/share/fonts/truetype/roboto/hinted/Roboto-Regular.ttf",
+                 "/usr/share/fonts/truetype/roboto/Roboto-Regular.ttf"],
+    "firacode": ["/usr/share/fonts/truetype/firacode/FiraCode-Regular.ttf",
+                 "/usr/share/fonts/opentype/firacode/FiraCode-Regular.otf"],
+}}
+_DEFAULT_FONT_FILE = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+
+# ─── Bibliothèque de polices poussée par l'orchestrateur (motif éprouvé du multiview) ────────
+# CONFIG["font_library"] = [{{"key": "lib:<sha16>", "name", "family", "ext", "sha256", "b64"}}]
+# — injecté au DÉPLOIEMENT par app/fonts.resolve_params() (seules les polices RÉELLEMENT
+# référencées par les params voyagent, en base64). Rootfs ÉPHÉMÈRE → rematérialisation à CHAQUE
+# démarrage du script dans un répertoire de travail recréé, puis enregistrement dans
+# _FONT_FILES → _font() la sert comme une police d'image. Police illisible/clé inconnue →
+# repli DejaVu + log, jamais de crash.
+_FONT_LIB_DIR = "/tmp/avs_fonts"
+
+def _materialize_font_library():
+    lib = CONFIG.get("font_library") or []
+    if not lib:
+        return
+    try:
+        os.makedirs(_FONT_LIB_DIR, exist_ok=True)
+    except OSError as e:
+        print("[fonts] répertoire de travail impossible (%s) → repli DejaVu" % e, flush=True)
+        return
+    ok = 0
+    for ent in lib:
+        if not isinstance(ent, dict):
+            continue
+        key = str(ent.get("key") or "")
+        if not key.startswith("lib:"):
+            continue
+        ext = (ent.get("ext") or "ttf").lower()
+        if ext not in ("ttf", "otf", "ttc"):
+            ext = "ttf"
+        try:
+            data = base64.b64decode(ent.get("b64") or "", validate=True)
+            if not data:
+                raise ValueError("charge utile vide")
+            path = os.path.join(_FONT_LIB_DIR, "%s.%s" % (key[4:], ext))
+            tmp = path + ".part"
+            with open(tmp, "wb") as f:
+                f.write(data)
+            os.replace(tmp, path)
+            ImageFont.truetype(path, 16)          # chargement RÉEL : une police cassée est écartée ici
+            _FONT_FILES[key] = [path]
+            ok += 1
+        except Exception as e:
+            print("[fonts] police %s (%s) illisible : %s → repli DejaVu"
+                  % (key, ent.get("name") or "?", e), flush=True)
+    print("[fonts] bibliothèque matérialisée : %d/%d police(s) dans %s"
+          % (ok, len(lib), _FONT_LIB_DIR), flush=True)
+
+_materialize_font_library()
+
+# Police choisie (Réglages du container, champ "font" — clé builtin ou "lib:<sha16>") : champ
+# scope=user structurel → tout changement redéploie (cf. hooks.py _FORMAT_KEYS), seul moyen
+# d'embarquer les octets d'une nouvelle police de bibliothèque (rootfs éphémère).
+FONT_KEY = str(CONFIG.get("font") or "dejavu-sans-bold")
+
 def _font(px):
     px = max(8, int(px))
+    for path in _FONT_FILES.get(FONT_KEY, []):
+        try:
+            return ImageFont.truetype(path, px)
+        except Exception:
+            pass
     for path in ("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
                  "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"):
         try:
@@ -561,7 +642,7 @@ class ControlHandler(BaseHTTPRequestHandler):
                   "format": FORMAT_STR,
                   "beat_sec": lv["beat_sec"], "flash_ms": lv["flash_ms"],
                   "tone_hz": lv["tone_hz"], "show_brand": lv["show_brand"],
-                  "custom_text": lv["custom_text"],
+                  "custom_text": lv["custom_text"], "font": FONT_KEY,
                   "brand_system_name": BRAND_NAME, "brand_location": BRAND_LOC,
                   "has_logo": LOGO is not None,
                   "fps_live": m.get("fps"), "frame_index": m.get("frame_index"),

@@ -3,7 +3,7 @@
 # Auteur : Cyril Mazouer, pour le compte de BOBI SAS
 # Distribué sous licence GNU GPL v3 (ou ultérieure) ; voir le fichier LICENSE.
 
-_FORMAT_KEYS = frozenset(("width", "height", "fps", "chroma"))
+_FORMAT_KEYS = frozenset(("width", "height", "fps", "chroma", "font"))
 _SOFT_KEYS   = frozenset(("beat_sec", "flash_ms", "tone_hz", "show_brand", "custom_text",
                           "tc_enable"))
 
@@ -24,7 +24,9 @@ def before_deploy(params, context):
 
 def control_action(action, body, params, ctx):
     """POST /api/containers/<vmid>/control/config.
-    Params format (width/height/fps/chroma) → redéploiement.
+    Params format (width/height/fps/chroma/font) → redéploiement (la police, comme le format,
+    a besoin de recréer le conteneur — c'est le seul moyen d'embarquer les octets d'une police
+    de bibliothèque, cf. app/fonts.py : rootfs éphémère, rien n'est jamais persisté en DB).
     Params soft (beat/flash/tone/texte/marque) → appliqués à chaud via :8082/config."""
     if action != "config":
         return None
