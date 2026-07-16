@@ -195,6 +195,71 @@
     "endpoints": [
       "/state",
       "/config"
+    ],
+    "read_endpoints": ["/state"]
+  },
+  "param_tree": {
+    "global_groups": [
+      {
+        "label": "Mire visuelle",
+        "endpoint": "/config",
+        "fields": {
+          "beat_sec": {
+            "label": "Battement (s)",
+            "type": "number",
+            "min": 0.2,
+            "max": 10.0,
+            "default": 1.0
+          },
+          "flash_ms": {
+            "label": "Durée flash + bip (ms)",
+            "type": "number",
+            "min": 10,
+            "max": 500,
+            "default": 40
+          }
+        }
+      },
+      {
+        "label": "Mire sonore",
+        "endpoint": "/config",
+        "fields": {
+          "tone_hz": {
+            "label": "Fréquence bip (Hz)",
+            "type": "number",
+            "min": 100,
+            "max": 12000,
+            "default": 1000
+          }
+        }
+      },
+      {
+        "label": "Habillage",
+        "endpoint": "/config",
+        "fields": {
+          "show_brand": {
+            "label": "Afficher la marque",
+            "type": "bool",
+            "default": true
+          },
+          "custom_text": {
+            "label": "Texte personnalisé",
+            "type": "text",
+            "default": ""
+          }
+        }
+      },
+      {
+        "label": "Timecode",
+        "endpoint": "/config",
+        "fields": {
+          "tc_enable": {
+            "label": "Générateur de timecode",
+            "type": "bool",
+            "default": false
+          }
+        }
+      }
     ]
   },
   "actions": [
