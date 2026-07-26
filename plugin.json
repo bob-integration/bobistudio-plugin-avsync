@@ -8,7 +8,7 @@
     "class": "mode-corrector",
     "oklch": "0.80 0.05 110"
   },
-  "version": "0.12.0",
+  "version": "0.13.0",
   "description": "Générateur de test de synchronisation image/son : flash plein écran + bip synchrones, compteur, barre de balayage, et overlay personnalisable (logo entreprise, nom du système, localisation, format vidéo, texte libre).",
   "nav": {
     "section": "sources",
@@ -34,7 +34,8 @@
     "custom_text": "",
     "font": "dejavu-sans-bold",
     "genlock": true,
-    "tc_enable": false
+    "tc_enable": false,
+    "log_level": "info"
   },
   "config_schema": [
     {
@@ -167,6 +168,32 @@
       "visible_if": {
         "slice_mode": true
       }
+    },
+    {
+      "key": "log_level",
+      "type": "select",
+      "label": "Niveau de log",
+      "help": "Verbosité du journal du conteneur. Défaut « Événements » : les faits marquants (démarrage/arrêt, changement de format, reconnexion, repli sur un chemin dégradé, entrée qui apparaît ou disparaît) sont TOUJOURS écrits — après une panne le journal doit permettre de reconstituer l'histoire, et élever le niveau après coup ne récupère rien. Les métriques périodiques (fps, compteurs) ne sont PAS journalisées : elles sont déjà publiées sur :8080. « Détaillé » = lance-flammes par trame, à n'activer que le temps d'un diagnostic (le journal Docker n'est pas roté).",
+      "options": [
+        {
+          "value": "debug",
+          "label": "Détaillé (par trame — diagnostic ponctuel)"
+        },
+        {
+          "value": "info",
+          "label": "Événements (défaut)"
+        },
+        {
+          "value": "warning",
+          "label": "Anomalies seules"
+        },
+        {
+          "value": "error",
+          "label": "Erreurs seules"
+        }
+      ],
+      "default": "info",
+      "scope": "user"
     }
   ],
   "wiring": {
@@ -196,7 +223,9 @@
       "/state",
       "/config"
     ],
-    "read_endpoints": ["/state"]
+    "read_endpoints": [
+      "/state"
+    ]
   },
   "param_tree": {
     "global_groups": [

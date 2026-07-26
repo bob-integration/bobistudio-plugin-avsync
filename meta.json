@@ -1,7 +1,11 @@
 {
-  "version": "0.12.0",
-  "date": "2026-07-14",
+  "version": "0.13.0",
+  "date": "2026-07-26",
   "changes": {
+    "Niveau de log par plugin — silencieux par défaut (0.13.0)": [
+      "Nouveau réglage `log_level` (détaillé / événements / anomalies / erreurs, défaut « Événements »). Les impressions du script sont désormais classées ÉVÉNEMENT (démarrage, câblage d’une entrée, changement de format, reconnexion, repli) vs ANOMALIE (`warning`/`error`) : au niveau par défaut le journal raconte l’histoire du conteneur sans bavardage. Aucune métrique périodique n’est journalisée (le fps est publié sur :8080).",
+      "Pas encore d’endpoint /log_level sur ce plugin : le niveau est appliqué au (re)déploiement. Pilotable par macro via l’étape « config » (config_schema)."
+    ],
     "Bibliothèque de polices (0.12.0)": [
       "Nouveau réglage `font` (panneau ⚙, redéploiement) : l'habillage (marque + format + texte personnalisé) ET le générateur de timecode utilisent désormais la police choisie — polices d'image (DejaVu/Liberation/Inter/Roboto/Fira Code, mêmes chemins que le multiview, image compute partagée) ET polices de la BIBLIOTHÈQUE orchestrateur (Réglages → Polices, clé `lib:<sha16>`) via le sélecteur partagé window.BobiFonts (carte de contrôle, section « Police »).",
       "Motif de matérialisation ÉPROUVÉ du multiview, dupliqué tel quel (le script de plugin est autonome, ne peut pas importer l'orchestrateur) : `CONFIG[\"font_library\"]` (injecté au déploiement par app/fonts.resolve_params, base64, polices RÉELLEMENT référencées seulement) est rematérialisé sur disque local (rootfs éphémère) à chaque démarrage, validé par un chargement Pillow réel — police illisible ou clé inconnue → repli DejaVu + log, jamais de crash.",

@@ -31,6 +31,51 @@ CONFIG         = {config}
 HOSTNAME       = "{hostname}"
 PLUGIN_VERSION = "{plugin_version}"
 
+# ─── Niveau de log ─────────────────────────────────────────────────────────
+# `log_level` (config_schema du plugin, défaut « info ») filtre les impressions du script.
+# Le critère n'est PAS « verbeux vs silencieux » mais ÉVÉNEMENT vs MÉTRIQUE :
+#   debug   — le lance-flammes : par trame, par bande, décisions internes
+#   info    — ÉVÉNEMENTS rares et signifiants  ← DÉFAUT (toujours visible) : démarrage/
+#             arrêt, session ouverte/fermée, changement de format, reconnexion, repli sur
+#             un chemin dégradé, entrée qui apparaît/disparaît, rebascule.
+#   warning — anomalies et replis subis
+#   error   — échecs
+# RÈGLE 1 : après une panne, le journal PAR DÉFAUT doit permettre de RECONSTITUER
+#   l'histoire. Élever le niveau après coup ne récupère RIEN : ce qui n'a pas été écrit
+#   est perdu. On ne coupe donc pas l'information, on coupe la redondance.
+# RÈGLE 2 : une MÉTRIQUE PÉRIODIQUE (fps, compteurs) ne se journalise PAS — elle est déjà
+#   publiée sur :8080 et échantillonnée par l'orchestrateur. La journaliser duplique la
+#   mesure ET consomme la fenêtre de rétention (journal Docker non roté : le bruit purge
+#   les lignes utiles anciennes). Au mieux `debug`.
+# RÈGLE 3 : un événement qui peut partir EN RAFALE s'AGRÈGE sur une fenêtre et sort en UNE
+#   ligne périodique (« N frames lentes sur la dernière minute, pire … ») — le signal
+#   reste, le spam disparaît.
+# Réglable à chaud, sans redéployer, quand le plugin expose l'endpoint de contrôle :
+# POST :8082/log_level {{"level": "debug"}} (exposé aux macros via param_tree/actions).
+_LOG_ORDER = {{"debug": 10, "info": 20, "warning": 30, "error": 40}}
+LOG_LEVEL = str(CONFIG.get("log_level") or "info").strip().lower()
+if LOG_LEVEL not in _LOG_ORDER:
+    LOG_LEVEL = "info"
+_LOG_MIN = _LOG_ORDER[LOG_LEVEL]
+
+
+def log(msg, niveau="info"):
+    """Impression gatée par le niveau de log courant (défaut du message : « info »)."""
+    if _LOG_ORDER.get(niveau, 20) >= _LOG_MIN:
+        print(msg, flush=True)
+
+
+def set_log_level(niveau):
+    """Change le niveau à chaud. Renvoie True si le niveau est reconnu."""
+    global LOG_LEVEL, _LOG_MIN
+    lv = str(niveau or "").strip().lower()
+    if lv not in _LOG_ORDER:
+        return False
+    LOG_LEVEL, _LOG_MIN = lv, _LOG_ORDER[lv]
+    return True
+
+
+
 WIDTH  = int(CONFIG.get("width") or 1280);  WIDTH  -= WIDTH % 2
 HEIGHT = int(CONFIG.get("height") or 720);  HEIGHT -= HEIGHT % 2
 def _rate_nd(v):
@@ -251,7 +296,7 @@ def _materialize_font_library():
     try:
         os.makedirs(_FONT_LIB_DIR, exist_ok=True)
     except OSError as e:
-        print("[fonts] répertoire de travail impossible (%s) → repli DejaVu" % e, flush=True)
+        log("[fonts] répertoire de travail impossible (%s) → repli DejaVu" % e, "warning")
         return
     ok = 0
     for ent in lib:
@@ -276,10 +321,10 @@ def _materialize_font_library():
             _FONT_FILES[key] = [path]
             ok += 1
         except Exception as e:
-            print("[fonts] police %s (%s) illisible : %s → repli DejaVu"
-                  % (key, ent.get("name") or "?", e), flush=True)
-    print("[fonts] bibliothèque matérialisée : %d/%d police(s) dans %s"
-          % (ok, len(lib), _FONT_LIB_DIR), flush=True)
+            log("[fonts] police %s (%s) illisible : %s → repli DejaVu"
+                % (key, ent.get("name") or "?", e), "warning")
+    log("[fonts] bibliothèque matérialisée : %d/%d police(s) dans %s"
+        % (ok, len(lib), _FONT_LIB_DIR), "info")
 
 _materialize_font_library()
 
@@ -343,7 +388,7 @@ def _load_logo():
             img = img.resize((w, target_h), RESAMPLE)
         return img
     except Exception as e:
-        print("logo illisible: %s" % e)
+        log("logo illisible: %s" % e, "warning")
         return None
 
 LOGO = _load_logo()
@@ -496,9 +541,9 @@ def video_feeder():
                        index_mode=("tai" if GENLOCK else "free"),
                        **({{"slice_height": V_SLICE_H}} if V_SLICE_H else {{}}))
     if SLICE_MODE:
-        print("slice_mode %s : sortie %s %s" % ("actif" if V_SLICE_H else "INÉLIGIBLE",
-              VIDEO_SHM, ("tranchée par %d lignes (%d tranches)" % (V_SLICE_H, _V_TOTAL_SLICES))
-              if V_SLICE_H else "(hauteur %d sans diviseur) → chemin historique" % HEIGHT))
+        log("slice_mode %s : sortie %s %s" % ("actif" if V_SLICE_H else "INÉLIGIBLE",
+            VIDEO_SHM, ("tranchée par %d lignes (%d tranches)" % (V_SLICE_H, _V_TOTAL_SLICES))
+            if V_SLICE_H else "(hauteur %d sans diviseur) → chemin historique" % HEIGHT), "info")
     # Générateur de timecode (option, togglable À CHAUD via /config) : flux ANC data
     # `<hostname>_anc` (RFC 8331, un paquet ATC RP 188 par trame), écrit À L'INDEX DU GRAIN
     # VIDÉO (alignement TC↔image parfait en genlock). Writer créé PARESSEUSEMENT à la première
@@ -537,9 +582,9 @@ def video_feeder():
                 wa = bobimxl.Writer(inst, ANC_SHM, 0, 0,
                                     index_mode=("tai" if GENLOCK else "free"),
                                     flow_def=bobimxl.build_data_flow_def(ANC_SHM, FPS_NUM, FPS_DEN))
-                print("timecode: flux ANC %s actif (ATC RP 188, RFC 8331)" % ANC_SHM)
+                log("timecode: flux ANC %s actif (ATC RP 188, RFC 8331)" % ANC_SHM, "info")
             except Exception as e:
-                print("timecode: flux ANC indisponible (%s) — incrustation seule" % e)
+                log("timecode: flux ANC indisponible (%s) — incrustation seule" % e, "warning")
         if tc_on:
             _tp = next_t if GENLOCK else time.time()
             # HEURE CIVILE LOCALE : horloge nœud (TAI) − offset TAI→UTC, puis fuseau (TZ_NAME).
