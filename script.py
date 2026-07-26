@@ -691,19 +691,25 @@ class ControlHandler(BaseHTTPRequestHandler):
                   "brand_system_name": BRAND_NAME, "brand_location": BRAND_LOC,
                   "has_logo": LOGO is not None,
                   "fps_live": m.get("fps"), "frame_index": m.get("frame_index"),
+                  "log_level": LOG_LEVEL,   # lisible en condition de macro
                   "plugin_version": PLUGIN_VERSION}}
             self._send_json(200, s)
         else:
             self.send_response(404); self.end_headers()
 
     def do_POST(self):
-        if self.path != "/config":
+        if self.path not in ("/config", "/log_level"):
             self.send_response(404); self.end_headers(); return
         n = int(self.headers.get("Content-Length", 0))
         try:
             body = json.loads(self.rfile.read(n)) if n else {{}}
         except Exception:
             self._send_json(400, {{"error": "JSON invalide"}}); return
+        if self.path == "/log_level":
+            # Verbosité À CHAUD (pas de redéploiement) : instruction d'incident. Le niveau
+            # PERSISTANT reste le champ `log_level` du config_schema ; celui-ci est volatil.
+            ok = set_log_level(body.get("level") or body.get("log_level"))
+            self._send_json(200 if ok else 400, {{"ok": ok, "log_level": LOG_LEVEL}}); return
         _validators = {{
             "beat_sec": lambda v: float(v),
             "flash_ms": lambda v: int(v),
