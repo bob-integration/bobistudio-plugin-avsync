@@ -229,6 +229,11 @@ window.MXLPlugins["avsync"] = {
       _drag = { k, startY: e.clientY, startVal: parseFloat(k.dataset.val),
                 sens: (max - min) / 150 };
       try { k.setPointerCapture(e.pointerId); } catch (_) {}
+      // preventDefault empêche la sélection de texte pendant le glissé, mais il empêche AUSSI
+      // le clic de donner le focus — donc ni le cercle de sélection ni le bouton de remise à
+      // zéro, qui n'apparaît qu'au focus, ne se montraient. On focalise donc à la main.
+      const hit = k.querySelector('.ctl-knob-hit');
+      if (hit) hit.focus();
       e.preventDefault();
     }, { passive: false });
 
