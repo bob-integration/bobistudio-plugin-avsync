@@ -538,7 +538,6 @@ def video_feeder():
     # MODE TRANCHE : le flowDef porte slice_height quand éligible (progressif + divisible) →
     # grain publié en N tranches égales ; sinon flowDef inchangé (historique octet-identique).
     w = bobimxl.Writer(inst, VIDEO_SHM, WIDTH, HEIGHT, CHROMA, BIT_DEPTH, FPS_NUM, FPS_DEN,
-                       index_mode=("tai" if GENLOCK else "free"),
                        **({{"slice_height": V_SLICE_H}} if V_SLICE_H else {{}}))
     if SLICE_MODE:
         log("slice_mode %s : sortie %s %s" % ("actif" if V_SLICE_H else "INÉLIGIBLE",
@@ -580,7 +579,6 @@ def video_feeder():
             _wa_try = time.monotonic()
             try:
                 wa = bobimxl.Writer(inst, ANC_SHM, 0, 0,
-                                    index_mode=("tai" if GENLOCK else "free"),
                                     flow_def=bobimxl.build_data_flow_def(ANC_SHM, FPS_NUM, FPS_DEN))
                 log("timecode: flux ANC %s actif (ATC RP 188, RFC 8331)" % ANC_SHM, "info")
             except Exception as e:
@@ -639,8 +637,7 @@ def video_feeder():
             if frame_k < now_k: frame_k = now_k + 1   # rattrapage si retard système
 
 def audio_feeder():
-    aw = bobimxl.AudioWriter(inst, AUDIO_SHM, channels=A_CHANNELS, sample_rate=A_SAMPLE_RATE,
-                             index_mode=("tai" if GENLOCK else "free"))
+    aw = bobimxl.AudioWriter(inst, AUDIO_SHM, channels=A_CHANNELS, sample_rate=A_SAMPLE_RATE)
     written_ms = 0
     _aclk = time.time if GENLOCK else time.monotonic
     while True:
