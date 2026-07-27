@@ -169,11 +169,7 @@ window.MXLPlugins["avsync"] = {
     this._timers[vmid] = setInterval(refresh, 3000);
 
     // ─── Rotatifs ────────────────────────────────────────────────────────────
-    // Course 270° (−135° à +135°). Drag vertical : haut = augmente.
-    function _knobAngle(val, min, max) {
-      const pct = Math.max(0, Math.min(1, (val - min) / (max - min)));
-      return -135 + pct * 270;
-    }
+    // Drag vertical : haut = augmente. Le TRACÉ est celui du catalogue (arc).
 
     function _knobStep(knob) {
       return parseFloat(knob.dataset.step) || 1;
@@ -188,10 +184,17 @@ window.MXLPlugins["avsync"] = {
       // arrondi propre pour éviter 0.30000000001
       val = parseFloat(val.toPrecision(6));
       knob.dataset.val = val;
-      knob.setAttribute('aria-valuenow', val);
-      const dial = knob.querySelector('.avs-knob-dial');
-      if (dial) dial.style.transform = `rotate(${_knobAngle(val, min, max)}deg)`;
-      const valEl = knob.closest('.avs-knob-wrap')?.querySelector('.avs-knob-val');
+      // Tracé délégué au catalogue : arc + graduations + repère de la valeur par défaut.
+      // Seule la zone de préhension est réécrite — le bouton de remise à zéro, qui est un
+      // frère dans le rotatif, survit donc à chaque mise à jour.
+      const dial = knob.querySelector('.ctl-knob-hit');
+      if (dial) {
+        const def = parseFloat(knob.dataset.default);
+        dial.innerHTML = window.MXLControls.knobSvg('arc', (val - min) / (max - min),
+          isFinite(def) ? (def - min) / (max - min) : null);
+        dial.setAttribute('aria-valuenow', val);
+      }
+      const valEl = knob.querySelector('.avs-knob-val');
       if (valEl) {
         const unitEl = valEl.querySelector('.avs-knob-unit');
         const unit   = unitEl ? unitEl.outerHTML : '';
@@ -204,9 +207,22 @@ window.MXLPlugins["avsync"] = {
     el.querySelectorAll('.avs-knob').forEach(k =>
       _setKnob(k, parseFloat(k.dataset.val)));
 
+    // Remise à la valeur par défaut. Le repère sur l'arc dit OÙ est le défaut ; ce bouton y
+    // ramène. Sans lui, revenir au réglage d'origine demande de se souvenir du chiffre.
+    el.addEventListener('click', e => {
+      const b = e.target.closest('.ctl-knob-reset');
+      if (!b) return;
+      const k = b.closest('.avs-knob');
+      const def = k && parseFloat(k.dataset.default);
+      if (!k || !isFinite(def)) return;
+      _setKnob(k, def);
+      if (k.dataset.name) _dirty.add(k.dataset.name);
+    });
+
     // Drag
     let _drag = null;
     el.addEventListener('pointerdown', e => {
+      if (e.target.closest('.ctl-knob-reset')) return;   // le reset n'est pas une prise
       const k = e.target.closest('.avs-knob');
       if (!k) return;
       const min = parseFloat(k.dataset.min), max = parseFloat(k.dataset.max);

@@ -239,48 +239,12 @@
   padding: 4px 0 2px;
 }
 
-.avs-knob-wrap {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 5px;
-  min-width: 54px;
-}
-
-.avs-knob {
-  position: relative;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-  cursor: ns-resize;
-  touch-action: none;
-  flex-shrink: 0;
-  transition: border-color 120ms;
-}
-
-.avs-knob:hover { border-color: var(--text-muted); }
-.avs-knob:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.avs-knob-dial {
-  position: absolute;
-  left: calc(50% - 1.5px);
-  top: 4px;
-  width: 3px;
-  height: 11px;
-  background: var(--accent);
-  border-radius: 2px;
-  transform-origin: 50% calc(18px - 4px);
-}
-
+/* Enveloppe, corps, cadran, survol et focus du rotatif : catalogue (.ctl-knob--arc).
+ * Le cadran pivotant a été remplacé par l'arc — RÈGLE DE PARC : tous les rotatifs sont en arc. */
+/* La valeur vient de .ctl-knob-val (police, chiffres tabulaires) ; seule la compacité
+ * propre à ce plugin est conservée. */
 .avs-knob-val {
-  font-family: var(--font-mono);
   font-size: 0.84em;
-  color: var(--text-strong);
   line-height: 1;
   white-space: nowrap;
 }
@@ -290,13 +254,6 @@
   color: var(--text-muted);
 }
 
-.avs-knob-lbl {
-  font-size: 0.7em;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  white-space: nowrap;
-}
 
 /* ─── Switch iOS (réutilise palette-field-check de base.css) ─────────────── */
 .avs-switch {
