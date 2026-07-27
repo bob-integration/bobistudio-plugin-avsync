@@ -27,13 +27,13 @@
     <div class="avs-row">
       <label class="avs-f avs-f-preset">
         <span>Résolution</span>
-        <select name="fmt_preset">
+        <select class="ctl-select" name="fmt_preset">
           <option value="">Chargement…</option>
         </select>
       </label>
       <label class="avs-f avs-f-sel">
         <span>Chroma</span>
-        <select name="chroma">
+        <select class="ctl-select" name="chroma">
           <option value="420">4:2:0</option>
           <option value="422">4:2:2</option>
           <option value="444">4:4:4</option>
@@ -88,13 +88,13 @@
       <button class="btn btn-sm btn-blue avs-apply" data-group="disp">Appliquer</button>
     </div>
     <div class="avs-row avs-row-col">
-      <label class="palette-field-check avs-switch">
-        <input type="checkbox" name="show_brand">
+      <label class="ctl-switch-inline avs-switch">
+        <input type="checkbox" class="ctl-switch" name="show_brand">
         <span>Afficher la marque (logo + nom + lieu)</span>
       </label>
-      <label class="palette-field-check avs-switch"
+      <label class="ctl-switch-inline avs-switch"
              title="Incruste le timecode heure du jour (hh:mm:ss:img) sous le compteur ET émet un flux ANC ATC RP 188 (RFC 8331) câblable — ex. vers le port ANC d'une fenêtre de multiview.">
-        <input type="checkbox" name="tc_enable">
+        <input type="checkbox" class="ctl-switch" name="tc_enable">
         <span>Générateur de timecode (incrusté + flux ANC)</span>
       </label>
       <label class="avs-f avs-f-full">
@@ -115,7 +115,7 @@
     <div class="avs-row">
       <label class="avs-f avs-f-full">
         <span>Police (habillage + timecode)</span>
-        <select name="font"></select>
+        <select class="ctl-select" name="font"></select>
       </label>
     </div>
   </div>

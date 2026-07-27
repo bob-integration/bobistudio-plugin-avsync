@@ -255,7 +255,7 @@
 }
 
 
-/* ─── Switch iOS (réutilise palette-field-check de base.css) ─────────────── */
+/* ─── Interrupteurs : catalogue (.ctl-switch / .ctl-switch-inline) ────────── */
 .avs-switch {
   margin-bottom: 0;
 }
