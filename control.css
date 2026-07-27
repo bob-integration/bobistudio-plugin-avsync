@@ -143,8 +143,10 @@
   white-space: nowrap;
 }
 
-.avs-f input[type="number"],
-.avs-f select {
+/* NE PAS remettre `select` ici : le raccourci `background` réinitialise background-image et
+ * efface la flèche du catalogue, et `.avs-f select` bat `.ctl-select` en spécificité. Tout ce
+ * qui touche à l'apparence d'une liste appartient désormais à .ctl-select. */
+.avs-f input[type="number"] {
   font-family: var(--font-mono);
   font-size: 0.88em;
   background: var(--bg-input);
@@ -156,6 +158,7 @@
   transition: border-color 120ms;
 }
 
+/* Largeur seulement — l'apparence vient du catalogue. */
 .avs-f select {
   width: auto;
   min-width: 76px;
@@ -173,8 +176,7 @@
   transition: border-color 120ms;
 }
 
-.avs-f input:focus,
-.avs-f select:focus {
+.avs-f input:focus {
   outline: none;
   border-color: var(--accent);
 }
