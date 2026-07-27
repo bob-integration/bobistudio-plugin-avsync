@@ -215,13 +215,6 @@ GENLOCK = _gl if isinstance(_gl, bool) else str(_gl).strip().lower() in ("1", "t
 def _grid_next(now_s, interval_s):
     import math as _m
     return (_m.floor(now_s / interval_s) + 1) * interval_s
-def _grid_ns(k):
-    return round(k * 1_000_000_000 * FPS_DEN / FPS_NUM)
-def _grid_k(ns):
-    return ns * FPS_NUM // (1_000_000_000 * FPS_DEN)
-def _grid_sleep_until(deadline_ns):
-    dt = (deadline_ns - time.clock_gettime_ns(time.CLOCK_REALTIME)) / 1e9
-    if dt > 0: time.sleep(dt)
 T0 = time.time() if GENLOCK else time.monotonic()   # origine partagée vidéo + audio
 
 
@@ -552,11 +545,19 @@ def video_feeder():
     period = FPS_DEN / FPS_NUM
     _clk = time.time if GENLOCK else time.monotonic
     next_t = _grid_next(_clk(), period) if GENLOCK else _clk()
-    frame_k = _grid_k(time.clock_gettime_ns(time.CLOCK_REALTIME)) + 2 if GENLOCK else 0
+    frame_k = 0
     win_cnt = 0; win_start = time.time(); win_render_ns = 0
     while True:
         if GENLOCK:
-            _grid_sleep_until(_grid_ns(frame_k))
+            # Coordonnée ET échéance viennent du point unique (bobimxl), sur l'horloge TAI.
+            # Le calcul de grille était fait ici à la main, sur CLOCK_REALTIME — qui vaut l'UTC
+            # sur un nœud correctement synchronisé, soit 37 s à côté de la grille de tous les
+            # autres producteurs. `lookahead=2` : on vise deux créneaux devant, sinon l'échéance
+            # est déjà passée au réveil. Le rattrapage d'un creux d'ordonnancement est inclus
+            # (chaque appel repart de la grille courante) — d'où la disparition du compteur
+            # incrémenté à la main et de sa garde « si je suis en retard ».
+            frame_k = w.next_index(lookahead=2)
+            bobimxl.sleep_until_tai(w.index_time_ns(frame_k))
             now = _clk()
         else:
             now = _clk()
@@ -631,10 +632,6 @@ def video_feeder():
         next_t += period
         if next_t < now:
             next_t = (_grid_next(now, period) if GENLOCK else now + period)
-        if GENLOCK:
-            frame_k += 1
-            now_k = _grid_k(time.clock_gettime_ns(time.CLOCK_REALTIME))
-            if frame_k < now_k: frame_k = now_k + 1   # rattrapage si retard système
 
 def audio_feeder():
     aw = bobimxl.AudioWriter(inst, AUDIO_SHM, channels=A_CHANNELS, sample_rate=A_SAMPLE_RATE)

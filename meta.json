@@ -1,7 +1,11 @@
 {
-  "version": "0.15.0",
+  "version": "0.16.0",
   "date": "2026-07-27",
   "changes": {
+    "Cadence et index sur l'horloge TAI, via le point unique (0.16.0)": [
+      "L'index de grain et l'échéance de cadence viennent désormais du point unique (bobimxl.Writer.next_index / index_time_ns / sleep_until_tai), sur l'horloge TAI. Le plugin recalculait sa propre grille à la main, sur CLOCK_REALTIME — qui vaut l'UTC sur un nœud correctement synchronisé, soit 37 s à côté de la grille de tous les autres producteurs du même nœud.",
+      "`lookahead=2` porte dans le helper commun le besoin réel qui justifiait ce code local : viser deux créneaux devant pour que l'échéance ne soit pas déjà passée au réveil. Le rattrapage d'un creux d'ordonnancement est inclus (chaque appel repart de la grille courante) — d'où la disparition du compteur incrémenté à la main et de sa garde « si je suis en retard »."
+    ],
     "Index de sortie : un seul point de calcul, dans bobimxl (0.15.0)": [
       "L'index des grains de sortie n'est plus calculé dans le plugin : il vient de bobimxl.Writer.next_index, LE point unique pour toute la flotte — grille TAI, strictement croissante, holdover. Chaque plugin réinventait sa version (compteur maison, appel direct à mxlGetCurrentIndex, convention de repli propre), avec les divergences que ça implique.",
       "Un index de grain est une COORDONNÉE DE TEMPS, pas un numéro de séquence : docs/Timing.md du SDK MXL est normatif (GrainIndex = Timestamp / GrainDurationNs, epoch SMPTE 2059-1). Un compteur parti de 0 casse l'alignement inter-flux et rend le flux irréplicable entre nœuds.",
