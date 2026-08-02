@@ -21,6 +21,15 @@ import os, io, time, json, base64, threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import numpy as np
 import bobimxl   # migration MXL : sortie vidéo (Writer) + audio bip (AudioWriter) — Phases 1/3
+
+
+def _mxl_lib_state():
+    """Variante libmxl réellement chargée (baseline / x86-64-v3) — diagnostic seul, ne doit
+    JAMAIS faire échouer /state."""
+    try:
+        return bobimxl.lib_info()
+    except Exception:
+        return None
 from PIL import Image, ImageDraw, ImageFont
 try:
     RESAMPLE = Image.Resampling.LANCZOS
@@ -686,7 +695,8 @@ class ControlHandler(BaseHTTPRequestHandler):
                   "has_logo": LOGO is not None,
                   "fps_live": m.get("fps"), "frame_index": m.get("frame_index"),
                   "log_level": LOG_LEVEL,   # lisible en condition de macro
-                  "plugin_version": PLUGIN_VERSION}}
+                  "plugin_version": PLUGIN_VERSION,
+                  "mxl_lib": _mxl_lib_state()}}
             self._send_json(200, s)
         else:
             self.send_response(404); self.end_headers()
