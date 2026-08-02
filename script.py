@@ -439,7 +439,7 @@ def _render_into(vw, flash, sec, fis, bar_x, yuv_black=None, yuv_white=None, tc_
     base = (yuv_white if flash else yuv_black)
     if base is None:
         base = YUV_WHITE if flash else YUV_BLACK
-    vw[:V_FRAME_SIZE] = base
+    bobimxl.blit(vw, base)
     Y = vw[:Y_SIZE].view(_NP_DT).reshape(HEIGHT, WIDTH)
     U = vw[Y_SIZE:Y_SIZE + UV_SIZE].view(_NP_DT).reshape(UV_H, UV_W)
     V = vw[Y_SIZE + UV_SIZE:V_FRAME_SIZE].view(_NP_DT).reshape(UV_H, UV_W)

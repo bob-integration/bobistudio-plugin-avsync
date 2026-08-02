@@ -1,5 +1,5 @@
 {
-  "version": "0.16.0",
+  "version": "0.17.0",
   "date": "2026-07-27",
   "changes": {
     "Cadence et index sur l'horloge TAI, via le point unique (0.16.0)": [
