@@ -1,7 +1,14 @@
 {
-  "version": "0.18.0",
+  "version": "0.19.0",
   "date": "2026-08-02",
   "changes": {
+    "Cadence rétablie : la mire livrait la MOITIÉ de sa cadence (0.19.0)": [
+      "CORRECTIF : `next_index(lookahead=2)` puis sommeil jusqu'à l'échéance de CETTE trame divisait la cadence par deux, en silence. L'avance est consommée PAR LE SOMMEIL — on se réveille AU créneau visé, donc l'appel suivant repart d'une grille déjà avancée de 2 et lui rajoute 2 : la tête avance de 2 créneaux par tour. Passé à `lookahead=1`.",
+      "MESURÉ le 2026-08-02 sur cinq nœuds : 25,0 fps pile pour 50 demandés sur dell-1 et dl-380, 16,7 (= 50/3, un créneau de débordement) sur les trois R620 — avec 8 ms de rendu pour 20 ms de budget, donc largement la place. Ce n'était pas un plafond de coût mais un décalage d'index.",
+      "Rien ne le voyait : le flux restait sur la grille, strictement croissant, et `own_latency_ms` restait bas puisque le rendu allait vite. Seule l'alarme de cadence de l'orchestrateur l'a signalé, parce qu'elle compare à l'INTENTION (50 demandés) et non à un idéal. Les plugins sans avance (`mixer`, `multiview`) tenaient 50,0 sur la même flotte au même instant.",
+      "Défaut introduit en 0.16.0 avec le passage au point unique bobimxl, et propagé par la docstring de `next_index` qui recommandait `lookahead=2` — docstring corrigée en même temps.",
+      "REDÉPLOIEMENT requis (le correctif vit dans le script)."
+    ],
     "Variante libmxl exposée dans /state (0.18.0)": [
       "GET /state porte désormais `mxl_lib` : {path, variante} de la libmxl RÉELLEMENT chargée (x86-64-v3/glibc-hwcaps ou baseline), lu via bobimxl.lib_info(). Jusqu'ici cette information n'était constatable que PAR NŒUD (app/placement.py) — un conteneur retombé sur la baseline (~20 % de coût en régime consommateur) ne se voyait qu'indirectement. Protégé par try/except : une erreur de lecture ne casse jamais /state."
     ],

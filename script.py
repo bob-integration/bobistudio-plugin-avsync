@@ -561,11 +561,16 @@ def video_feeder():
             # Coordonnée ET échéance viennent du point unique (bobimxl), sur l'horloge TAI.
             # Le calcul de grille était fait ici à la main, sur CLOCK_REALTIME — qui vaut l'UTC
             # sur un nœud correctement synchronisé, soit 37 s à côté de la grille de tous les
-            # autres producteurs. `lookahead=2` : on vise deux créneaux devant, sinon l'échéance
-            # est déjà passée au réveil. Le rattrapage d'un creux d'ordonnancement est inclus
-            # (chaque appel repart de la grille courante) — d'où la disparition du compteur
-            # incrémenté à la main et de sa garde « si je suis en retard ».
-            frame_k = w.next_index(lookahead=2)
+            # autres producteurs. `lookahead=1` : on vise LE créneau suivant, et pas au-delà.
+            # ⚠ Un producteur qui alloue `lookahead=L` PUIS DORT jusqu'à l'instant de cette
+            # trame consomme sa marge en dormant : il se réveille AU créneau visé, et l'appel
+            # suivant repart de la grille courante + L → la tête avance de L créneaux par tour.
+            # La cadence est donc DIVISÉE PAR L, par construction. Mesuré le 2026-08-02 avec
+            # L=2 : 25,0 fps pile pour 50 demandés, sur trois microarchitectures, avec 8 ms de
+            # rendu pour 20 ms de budget — donc pas un plafond de coût, un décalage d'index.
+            # Le rattrapage d'un creux d'ordonnancement reste inclus (chaque appel repart de la
+            # grille courante, cf. le `max` de bobimxl.next_index).
+            frame_k = w.next_index(lookahead=1)
             bobimxl.sleep_until_tai(w.index_time_ns(frame_k))
             now = _clk()
         else:
