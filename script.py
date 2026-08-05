@@ -125,7 +125,7 @@ if TZ_NAME:
         time.tzset()
     except Exception:
         pass
-# Horloge du nœud = échelle PTP (TAI, cf. PTP_CLOCK.md) : l'heure CIVILE affichée = horloge
+# Horloge du nœud = échelle PTP (TAI, cf. docs/reference/PTP_CLOCK.md) : l'heure CIVILE affichée = horloge
 # − tai_utc_offset_s (mesuré et injecté par before_deploy ; 0 si nœud en heure civile).
 try:
     TAI_UTC_OFFSET_S = max(0, int(CONFIG.get("tai_utc_offset_s") or 0))

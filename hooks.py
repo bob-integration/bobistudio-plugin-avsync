@@ -11,7 +11,7 @@ _SOFT_KEYS   = frozenset(("beat_sec", "flash_ms", "tone_hz", "show_brand", "cust
 def before_deploy(params, context):
     """Injecte l'HEURE CIVILE pour le générateur de timecode : fuseau du contrôleur (`tz` —
     les images runtime sont en UTC) + `tai_utc_offset_s` (l'horloge des nœuds est disciplinée
-    sur l'échelle PTP/TAI par conception, cf. PTP_CLOCK.md : l'heure civile = horloge nœud −
+    sur l'échelle PTP/TAI par conception, cf. docs/reference/PTP_CLOCK.md : l'heure civile = horloge nœud −
     offset, MESURÉ contre le contrôleur NTP — jamais 37 figé, robuste aux leap seconds).
     Ré-évalué à CHAQUE déploiement (mesure fraîche, cache 1 h par nœud)."""
     try:
