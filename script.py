@@ -167,12 +167,12 @@ PIX_FMT = ({{"420": "yuv420p", "422": "yuv422p", "444": "yuv444p"}}.get(CHROMA, 
            + (("12le" if BIT_DEPTH >= 12 else "10le") if _DEEP else ""))
 UV_W = WIDTH // _CW
 UV_H = HEIGHT // _CH
-V_HEADER_SIZE = 64
-V_RING_SIZE   = CONFIG.get("shm_video_ring", 10)
 Y_SIZE        = WIDTH * HEIGHT * _BPS
 UV_SIZE       = UV_W * UV_H * _BPS
 V_FRAME_SIZE  = Y_SIZE + 2 * UV_SIZE
-V_TOTAL_SIZE  = V_HEADER_SIZE + V_RING_SIZE * V_FRAME_SIZE
+# (ex-shm_video_ring/V_RING_SIZE/V_HEADER_SIZE/V_TOTAL_SIZE : dimensionnaient un ancien shm
+# maison ; la sortie vidéo passe par bobimxl (MXL) — profondeur gérée par domaine, cf.
+# réglage de nœud mxl_history_ms. Retiré 2026-08-09, constante morte.)
 
 def _out_slice_h(oh, ch=1):
     """MODE TRANCHE — slice_height de la sortie (même algo que delay/pyramide) : le plus petit
@@ -202,10 +202,8 @@ def _commit_sliced(w, gi):
 
 A_SAMPLE_RATE = 48000
 A_CHANNELS    = 8
-A_HEADER_SIZE = 64
-A_RING_SIZE   = CONFIG.get("shm_audio_ring", 100)
-A_CHUNK_SIZE  = (A_SAMPLE_RATE // 1000) * A_CHANNELS * 3   # 1152 (1 ms s24be 8ch)
-A_TOTAL_SIZE  = A_HEADER_SIZE + A_RING_SIZE * A_CHUNK_SIZE
+# (ex-shm_audio_ring/A_RING_SIZE/A_HEADER_SIZE/A_CHUNK_SIZE/A_TOTAL_SIZE : dimensionnaient un
+# ancien shm maison audio ; retiré au profit de bobimxl.AudioWriter, cf. note ci-dessus.)
 
 VIDEO_SHM = HOSTNAME
 AUDIO_SHM = HOSTNAME + "_audio"
