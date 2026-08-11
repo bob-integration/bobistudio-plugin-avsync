@@ -116,6 +116,35 @@ CUSTOM_TEXT = str(CONFIG.get("custom_text") or "")
 # (RFC 8331, motif player) sur `<hostname>_anc`, à l'index de grain de la vidéo → un multiview
 # câblé dessus affiche le TC exactement aligné sur l'image. Désactivé par défaut (coût nul).
 TC_ENABLE = _as_bool(CONFIG.get("tc_enable"), default=False)
+# ── BANDEAU-SONDE (probe_bands) : N bandeaux de blocs binaires répartis sur la hauteur, chacun
+# portant l'INDEX DE GRAIN et SON PROPRE NUMÉRO DE BANDE. 0 = désactivé (défaut, coût nul).
+#
+# POURQUOI. Un timecode UNIQUE au centre ne permet pas de distinguer trois situations que la
+# chaîne produit réellement : le grain est vieux ; la bande du timecode n'est pas encore écrite
+# (flux tranché lu à la tête) ; le grain mélange des trames (réplication corrompue). Les trois
+# donnent « un chiffre en retard », et c'est ce qui a fait retirer trois diagnostics le
+# 2026-08-11. Avec un bandeau PAR BANDE, une seule lecture répond : index par bande → l'âge réel,
+# et deux bandes d'index différents → déchirement, sans ambiguïté possible.
+#
+# POURQUOI DES BLOCS ET PAS UN QR. Le QR exige un décodeur (pyzbar/OpenCV) dans les images,
+# tolère mal le sous-échantillonnage 4:2:2, et surtout ne survit pas au redimensionnement — les
+# proxies descendent à 1/16. 32 blocs de WIDTH/32 pixels font encore ~3,7 px à 1/16, et se
+# décodent par un seuillage numpy sans aucune dépendance.
+#
+# FORMAT (32 blocs, luma seul — la chroma reste celle du fond, donc insensible au 4:2:2) :
+#   bits 31..8 : index de grain modulo 2^24 (93 h à 50 fps avant repli — sans objet en diagnostic)
+#   bits  7..4 : numéro de bande (0 = haut)
+#   bits  3..0 : contrôle = XOR des sept quartets précédents
+# Bloc à 1 = blanc légal (235), à 0 = noir légal (16). Le contrôle rejette une bande à moitié
+# écrite ou mélangée, au lieu de rendre un index plausible mais faux.
+PROBE_BANDS = max(0, min(16, int(CONFIG.get("probe_bands") or 0)))
+PROBE_BLOCKS = 32
+# 48 px et pas 24 : un bandeau doit rester lisible sur les PROXIES de la pyramide, qui
+# descendent à 1/8 et 1/16. À 24 px il ne faisait plus que 3 px à 1/8 et tombait entre deux
+# lignes échantillonnées — 0 bande valide, découvert au test. À 48 px il en fait 6, et la
+# lecture tient jusqu'à 1/8. Coût : 8 bandeaux × 48 px sur 1080, soit un tiers de l'image —
+# acceptable pour une mire de diagnostic, et l'option vaut 0 par défaut.
+PROBE_H = 48
 # Fuseau horaire injecté par le hook before_deploy (les images runtime sont en UTC) : le
 # timecode affiche l'HEURE LOCALE de la régie. Sans tz → heure du container (UTC).
 TZ_NAME = str(CONFIG.get("tz") or "").strip()
@@ -438,7 +467,8 @@ def _blend_region(plane, y0, y1, x0, x1, alpha, cval):
     plane[y0:y1, x0:x1] = (((a * cval + (255 - a) * bg + 128) * 257) >> 16).astype(plane.dtype)
 
 
-def _render_into(vw, flash, sec, fis, bar_x, yuv_black=None, yuv_white=None, tc_txt=None):
+def _render_into(vw, flash, sec, fis, bar_x, yuv_black=None, yuv_white=None,
+                 tc_txt=None, probe_idx=None):
     """Rend la mire DIRECTEMENT dans le grain MXL (zéro-copie) :
     1 memcpy du fond précalculé + patch de la barre (vues stridées, pas de gather) + blend du
     compteur en YUV sur son seul bbox (masque alpha PIL petit format). Sortie visuellement
@@ -494,6 +524,35 @@ def _render_into(vw, flash, sec, fis, bar_x, yuv_black=None, yuv_white=None, tc_
         tw, th = bb[2] - bb[0], bb[3] - bb[1]
         _blend_text(txt, FONT_BIG, (WIDTH - tw) // 2, (HEIGHT - th) // 2)
 
+    # BANDEAUX-SONDE : blocs binaires portant l'index de grain et le numéro de bande (cf.
+    # PROBE_BANDS en tête). Dessin EN DUR ici, décodage en dur dans le plugin lecteur : les deux
+    # scripts sont autonomes par construction (un plugin ne peut pas importer celui d'un autre),
+    # et les garder tels quels évite de coupler une fonction de DIAGNOSTIC à la bibliothèque
+    # cœur — donc évite un rebuild d'image sur toute la flotte pour la faire évoluer.
+    # ⚠ Dessinés APRÈS le timecode : avec 8 bandeaux l'un tombe sur le TC centré, qui écrasait
+    # ses blocs et rendait la bande INVALIDE (constaté au premier essai). Le bandeau prime donc.
+    # ⚠ Bornes de blocs en FLOTTANT : 1920/32 = 60 px, soit 7,5 px sur un proxy 1/8 — une
+    # largeur entière dérive d'un demi-pixel par bloc, deux blocs d'erreur en fin de bandeau.
+    _pb = int(_live.get("probe_bands", PROBE_BANDS) or 0)
+    if _pb and probe_idx is not None:
+        _bh = max(_CH, (PROBE_H // _CH) * _CH)
+        _pas = HEIGHT // _pb
+        for _b in range(_pb):
+            _y0 = _b * _pas + (_pas - _bh) // 2
+            _y0 -= _y0 % _CH
+            _y1 = min(HEIGHT, _y0 + _bh)
+            if _y1 <= _y0:
+                continue
+            _val = ((int(probe_idx) & 0xFFFFFF) << 8) | ((_b & 0xF) << 4)
+            _ctl = 0
+            for _q in range(7):
+                _ctl ^= (_val >> (4 * (_q + 1))) & 0xF
+            _val |= _ctl & 0xF
+            for _k in range(PROBE_BLOCKS):
+                _x0, _x1 = int(_k * WIDTH / PROBE_BLOCKS), int((_k + 1) * WIDTH / PROBE_BLOCKS)
+                Y[_y0:_y1, _x0:_x1] = 235 if (_val >> (PROBE_BLOCKS - 1 - _k)) & 1 else 16
+
+
 
 # ─── bip audio : blocs de 1 ms pré-calculés (sinus float32 8ch) — flux MXL ──
 # Migration MXL Phase 3 : on produit des blocs float32 (n,8) normalisés [-1,1] au lieu de s24be ;
@@ -517,6 +576,7 @@ _live_lock = threading.Lock()
 _live = {{
     "beat_sec": BEAT_SEC, "flash_ms": int(FLASH_MS), "tone_hz": float(TONE_HZ),
     "show_brand": SHOW_BRAND, "custom_text": CUSTOM_TEXT, "tc_enable": TC_ENABLE,
+    "probe_bands": PROBE_BANDS,
     "beep": BEEP, "beat_ms": BEAT_MS, "yuv_black": YUV_BLACK, "yuv_white": YUV_WHITE,
 }}
 
@@ -608,7 +668,8 @@ def video_feeder():
         _i, _gi, _vw = w.open_grain(index=(frame_k if GENLOCK else None))
         # Rendu 0.10.0 DIRECT dans le grain (zéro-copie) : memcpy du fond YUV précalculé +
         # patchs barre/compteur — plus de conversion RGB→YUV pleine trame par-frame.
-        _render_into(_vw, flash, sec, fis, bar_x, yuv_b, yuv_w, tc_txt=tc_txt)
+        _render_into(_vw, flash, sec, fis, bar_x, yuv_b, yuv_w, tc_txt=tc_txt,
+                     probe_idx=_i)
         if V_SLICE_H:
             # MODE TRANCHE : commit progressif de la trame déjà rendue (bandes 1..N).
             # Même index de grain, même media_ts, même phase flash/bip — seul le commit change.
@@ -689,6 +750,7 @@ class ControlHandler(BaseHTTPRequestHandler):
             s = {{"video_shm": VIDEO_SHM, "audio_shm": AUDIO_SHM,
                   "anc_shm": ANC_SHM if lv["tc_enable"] else None,   # générateur de timecode
                   "tc_enable": bool(lv["tc_enable"]),
+                  "probe_bands": int(lv.get("probe_bands") or 0),
                   "width": WIDTH, "height": HEIGHT, "fps": FPS, "chroma": CHROMA,
                   "format": FORMAT_STR,
                   "beat_sec": lv["beat_sec"], "flash_ms": lv["flash_ms"],
@@ -724,6 +786,10 @@ class ControlHandler(BaseHTTPRequestHandler):
             "show_brand": lambda v: bool(v),
             "custom_text": lambda v: str(v),
             "tc_enable": lambda v: bool(v),
+            # Bandeaux-sonde À CHAUD : on veut les allumer, mesurer, les éteindre — sans
+            # redéployer une mire qui est peut-être en train de servir de référence à un
+            # relevé en cours. Borné comme au démarrage (0 = éteint, 16 max).
+            "probe_bands": lambda v: max(0, min(16, int(v))),
         }}
         patch = {{}}
         for k, cast in _validators.items():

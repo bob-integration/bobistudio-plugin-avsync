@@ -94,7 +94,7 @@ window.MXLPlugins["avsync"] = {
     const GROUP_FIELDS = {
       fmt:  ['fmt_preset', 'chroma'],
       av:   [...el.querySelectorAll('.avs-knob[data-name]')].map(k => k.dataset.name),
-      disp: ['show_brand', 'custom_text', 'tc_enable'],
+      disp: ['show_brand', 'custom_text', 'tc_enable', 'probe_bands_on'],
       font: ['font'],
     };
     let _fmtLoaded = false;
@@ -139,6 +139,7 @@ window.MXLPlugins["avsync"] = {
       set('show_brand', s.show_brand);
       set('custom_text',s.custom_text);
       set('tc_enable',  s.tc_enable);
+      set('probe_bands_on', (s.probe_bands || 0) > 0);
       if (!_fontLoaded && !_dirty.has('font')) {
         _fontLoaded = true;
         loadFontSelect(s.font);
@@ -305,6 +306,11 @@ window.MXLPlugins["avsync"] = {
       if (txt) body.custom_text = txt.value;
       const tce = el.querySelector('[name="tc_enable"]');
       if (tce) body.tc_enable = tce.checked;
+      // Bandeaux-sonde : un simple ON/OFF. Le NOMBRE de bandeaux est un détail
+      // d'expert (il reste dans le config_schema) — l'opérateur n'a qu'une question à se
+      // poser : est-ce que je mesure, oui ou non. 8 est la valeur qui convient partout.
+      const pbo = el.querySelector('[name="probe_bands_on"]');
+      if (pbo) body.probe_bands = pbo.checked ? 8 : 0;
       return body;
     }
 

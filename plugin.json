@@ -8,7 +8,7 @@
     "class": "mode-corrector",
     "oklch": "0.80 0.05 110"
   },
-  "version": "0.19.1",
+  "version": "0.21.2",
   "description": "Générateur de test de synchronisation image/son : flash plein écran + bip synchrones, compteur, barre de balayage, et overlay personnalisable (logo entreprise, nom du système, localisation, format vidéo, texte libre).",
   "nav": {
     "section": "sources",
@@ -35,7 +35,8 @@
     "font": "dejavu-sans-bold",
     "genlock": true,
     "tc_enable": false,
-    "log_level": "info"
+    "log_level": "info",
+    "probe_bands": 0
   },
   "config_schema": [
     {
@@ -194,6 +195,15 @@
       ],
       "default": "info",
       "scope": "user"
+    },
+    {
+      "key": "probe_bands",
+      "type": "int",
+      "label": "Bandeaux-sonde (0 = éteint)",
+      "help": "Nombre de bandeaux de blocs binaires répartis sur la hauteur, portant l'index de grain ET le numéro de bande. Sert à mesurer la latence RÉELLE bande par bande et à détecter un déchirement (deux bandes d'index différents) — ce qu'un timecode unique au centre ne permet pas. 0 = désactivé (défaut, coût nul). 8 convient.",
+      "min": 0,
+      "max": 16,
+      "default": 0
     }
   ],
   "wiring": {

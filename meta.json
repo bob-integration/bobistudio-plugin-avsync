@@ -1,7 +1,16 @@
 {
-  "version": "0.19.1",
-  "date": "2026-08-09",
+  "version": "0.21.2",
+  "date": "2026-08-12",
   "changes": {
+    "Bandeaux-sonde : mesurer la latence RÉELLE bande par bande (0.21.2)": [
+      "Nouveau réglage « Bandeaux-sonde » (`probe_bands`, 0 = éteint par défaut, coût nul) : N bandeaux de 32 blocs binaires répartis sur la hauteur, portant l'INDEX DE GRAIN de la trame, LE NUMÉRO DE LA BANDE et un quartet de contrôle (XOR). Lus par le plugin « Sonde de latence ».",
+      "POURQUOI PAS UN TIMECODE UNIQUE : un TC au centre confond trois situations que la chaîne produit réellement — grain vieux, bande pas encore écrite (flux tranché lu à la tête), grain mélangeant deux trames (réplication corrompue). Les trois donnent « un chiffre en retard ». Un bandeau PAR BANDE les sépare en une seule lecture : index par bande → âge réel ; deux index différents → déchirement.",
+      "BLOCS ET PAS QR : le QR exige un décodeur dans les images, tolère mal le 4:2:2 et ne survit pas au redimensionnement (les proxies descendent à 1/16). 32 blocs font encore ~3,7 px à 1/16 et se décodent par un seuillage numpy, sans dépendance.",
+      "48 px de haut et pas 24 : MESURÉ — à 24 px le bandeau ne faisait plus que 3 px sur un proxy 1/8 et tombait entre deux lignes échantillonnées, soit 0 bande valide. À 48 px la lecture tient jusqu'à 1/8.",
+      "Les bandeaux sont dessinés APRÈS le timecode : avec 8 bandeaux, l'un tombe sur le TC centré, qui écrasait ses blocs et rendait la bande invalide (constaté au premier essai).",
+      "Réglable À CHAUD via POST /control (`probe_bands`) : on allume, on mesure, on éteint — sans redéployer une mire qui sert peut-être de référence à un relevé en cours. Exposé aussi dans GET /state.",
+      "Le format du panneau (chroma / profondeur de bits) suit désormais les Réglages système — cf. le correctif correspondant côté orchestrateur (`app/plugins.py`)."
+    ],
     "Audit shm_video_ring/shm_audio_ring : purge du legacy MXL (0.19.1)": [
       "MORT — shm_video_ring/shm_audio_ring ne dimensionnaient plus rien (sortie via bobimxl/MXL) : constantes retirées"
     ],

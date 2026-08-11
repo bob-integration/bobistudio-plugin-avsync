@@ -97,6 +97,11 @@
         <input type="checkbox" class="ctl-switch" name="tc_enable">
         <span>Générateur de timecode (incrusté + flux ANC)</span>
       </label>
+      <label class="ctl-switch-inline avs-switch"
+             title="Incruste des bandeaux de blocs binaires répartis sur la hauteur, portant l'index de grain et le numéro de bande. Permet au plugin « Sonde de latence » de mesurer la latence RÉELLE et de détecter les grains déchirés. Modifiable à chaud, sans redéployer. Éteint par défaut.">
+        <input type="checkbox" class="ctl-switch" name="probe_bands_on">
+        <span>Bandeaux-sonde (mesure de latence)</span>
+      </label>
       <label class="avs-f avs-f-full">
         <span>Texte</span>
         <input type="text" name="custom_text" placeholder="ex. Banc d'essai — Régie A">
