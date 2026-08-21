@@ -12,27 +12,29 @@
       <span class="avs-param-chip">beat <span data-live="beat_sec">—</span> s</span>
       <span class="avs-param-chip">flash <span data-live="flash_ms">—</span> ms</span>
       <span class="avs-param-chip">bip <span data-live="tone_hz">—</span> Hz</span>
-      <span class="avs-param-chip" data-live-brand>marque —</span>
+      <span class="avs-param-chip" data-live-brand data-i18n="plugin.avsync.brand">marque —</span>
     </div>
   </div>
 
   <!-- ─── Format ─── redéploiement ──────────────────────────────────────── -->
   <div class="avs-sec">
     <div class="avs-sec-hd">
-      <span class="avs-sec-lbl">Format</span>
-      <span class="avs-sec-note">(redéploiement)</span>
+      <span class="avs-sec-lbl" data-i18n="plugin.avsync.sec_format">Format</span>
+      <span class="avs-sec-note" data-i18n="plugin.avsync.redeploy_note">(redéploiement)</span>
       <span class="avs-fb" data-group="fmt"></span>
-      <button class="btn btn-sm btn-blue avs-apply" data-group="fmt">Appliquer</button>
+      <button class="btn btn-sm btn-blue avs-apply" data-group="fmt" data-i18n="plugin.avsync.apply_redeploy"
+              data-i18n-title="plugin.avsync.apply_redeploy_title"
+              title="Recrée le conteneur : le signal est coupé le temps du redéploiement.">Appliquer et redéployer</button>
     </div>
     <div class="avs-row">
       <label class="avs-f avs-f-preset">
-        <span>Résolution</span>
+        <span data-i18n="plugin.avsync.resolution">Résolution</span>
         <select class="ctl-select" name="fmt_preset">
-          <option value="">Chargement…</option>
+          <option value="" data-i18n="plugin.avsync.loading">Chargement…</option>
         </select>
       </label>
       <label class="avs-f avs-f-sel">
-        <span>Chroma</span>
+        <span data-i18n="plugin.avsync.chroma">Chroma</span>
         <select class="ctl-select" name="chroma">
           <option value="420">4:2:0</option>
           <option value="422">4:2:2</option>
@@ -45,37 +47,37 @@
   <!-- ─── Timing A/V ─── à chaud ────────────────────────────────────────── -->
   <div class="avs-sec">
     <div class="avs-sec-hd">
-      <span class="avs-sec-lbl">Timing A/V</span>
+      <span class="avs-sec-lbl" data-i18n="plugin.avsync.sec_timing">Timing A/V</span>
       <span class="avs-fb" data-group="av"></span>
-      <button class="btn btn-sm btn-blue avs-apply" data-group="av">Appliquer</button>
+      <span class="avs-sec-note avs-sec-live" data-i18n="plugin.avsync.live_note">appliqué en direct</span>
     </div>
     <div class="avs-knobs">
       <div class="ctl-knob ctl-knob--arc avs-knob" data-name="beat_sec" data-val="1.0"
            data-min="0.2" data-max="10" data-step="0.1" data-default="1.0">
-        <div class="ctl-knob-name">Battement</div>
-        <div class="ctl-knob-hit" role="slider" tabindex="0" aria-label="Battement"
+        <div class="ctl-knob-name" data-i18n="plugin.avsync.beat">Battement</div>
+        <div class="ctl-knob-hit" role="slider" tabindex="0" data-i18n-aria="plugin.avsync.beat" aria-label="Battement"
              aria-valuemin="0.2" aria-valuemax="10" aria-valuenow="1.0"></div>
         <span class="ctl-knob-val avs-knob-val">1.0<span class="avs-knob-unit"> s</span></span>
         <button type="button" class="ctl-knob-reset" tabindex="-1"
-                aria-label="Remettre Battement à la valeur par défaut">↺</button>
+                data-i18n-aria="plugin.avsync.beat_reset" aria-label="Remettre Battement à la valeur par défaut">↺</button>
       </div>
       <div class="ctl-knob ctl-knob--arc avs-knob" data-name="flash_ms" data-val="40"
            data-min="10" data-max="500" data-step="5" data-default="40">
-        <div class="ctl-knob-name">Flash + bip</div>
-        <div class="ctl-knob-hit" role="slider" tabindex="0" aria-label="Flash + bip"
+        <div class="ctl-knob-name" data-i18n="plugin.avsync.flash">Flash + bip</div>
+        <div class="ctl-knob-hit" role="slider" tabindex="0" data-i18n-aria="plugin.avsync.flash" aria-label="Flash + bip"
              aria-valuemin="10" aria-valuemax="500" aria-valuenow="40"></div>
         <span class="ctl-knob-val avs-knob-val">40<span class="avs-knob-unit"> ms</span></span>
         <button type="button" class="ctl-knob-reset" tabindex="-1"
-                aria-label="Remettre Flash + bip à la valeur par défaut">↺</button>
+                data-i18n-aria="plugin.avsync.flash_reset" aria-label="Remettre Flash + bip à la valeur par défaut">↺</button>
       </div>
       <div class="ctl-knob ctl-knob--arc avs-knob" data-name="tone_hz" data-val="1000"
            data-min="100" data-max="12000" data-step="50" data-default="1000">
-        <div class="ctl-knob-name">Tonalité</div>
-        <div class="ctl-knob-hit" role="slider" tabindex="0" aria-label="Tonalité"
+        <div class="ctl-knob-name" data-i18n="plugin.avsync.tone">Tonalité</div>
+        <div class="ctl-knob-hit" role="slider" tabindex="0" data-i18n-aria="plugin.avsync.tone" aria-label="Tonalité"
              aria-valuemin="100" aria-valuemax="12000" aria-valuenow="1000"></div>
         <span class="ctl-knob-val avs-knob-val">1000<span class="avs-knob-unit"> Hz</span></span>
         <button type="button" class="ctl-knob-reset" tabindex="-1"
-                aria-label="Remettre Tonalité à la valeur par défaut">↺</button>
+                data-i18n-aria="plugin.avsync.tone_reset" aria-label="Remettre Tonalité à la valeur par défaut">↺</button>
       </div>
     </div>
   </div>
@@ -83,28 +85,28 @@
   <!-- ─── Affichage ─── à chaud ─────────────────────────────────────────── -->
   <div class="avs-sec">
     <div class="avs-sec-hd">
-      <span class="avs-sec-lbl">Affichage</span>
+      <span class="avs-sec-lbl" data-i18n="plugin.avsync.sec_display">Affichage</span>
       <span class="avs-fb" data-group="disp"></span>
-      <button class="btn btn-sm btn-blue avs-apply" data-group="disp">Appliquer</button>
+      <span class="avs-sec-note avs-sec-live" data-i18n="plugin.avsync.live_note">appliqué en direct</span>
     </div>
     <div class="avs-row avs-row-col">
       <label class="ctl-switch-inline avs-switch">
         <input type="checkbox" class="ctl-switch" name="show_brand">
-        <span>Afficher la marque (logo + nom + lieu)</span>
+        <span data-i18n="plugin.avsync.show_brand">Afficher la marque (logo + nom + lieu)</span>
       </label>
-      <label class="ctl-switch-inline avs-switch"
+      <label class="ctl-switch-inline avs-switch" data-i18n-title="plugin.avsync.tc_enable_title"
              title="Incruste le timecode heure du jour (hh:mm:ss:img) sous le compteur ET émet un flux ANC ATC RP 188 (RFC 8331) câblable — ex. vers le port ANC d'une fenêtre de multiview.">
         <input type="checkbox" class="ctl-switch" name="tc_enable">
-        <span>Générateur de timecode (incrusté + flux ANC)</span>
+        <span data-i18n="plugin.avsync.tc_enable">Générateur de timecode (incrusté + flux ANC)</span>
       </label>
-      <label class="ctl-switch-inline avs-switch"
+      <label class="ctl-switch-inline avs-switch" data-i18n-title="plugin.avsync.probe_bands_title"
              title="Incruste des bandeaux de blocs binaires répartis sur la hauteur, portant l'index de grain et le numéro de bande. Permet au plugin « Sonde de latence » de mesurer la latence RÉELLE et de détecter les grains déchirés. Modifiable à chaud, sans redéployer. Éteint par défaut.">
         <input type="checkbox" class="ctl-switch" name="probe_bands_on">
-        <span>Bandeaux-sonde (mesure de latence)</span>
+        <span data-i18n="plugin.avsync.probe_bands">Bandeaux-sonde (mesure de latence)</span>
       </label>
       <label class="avs-f avs-f-full">
-        <span>Texte</span>
-        <input type="text" name="custom_text" placeholder="ex. Banc d'essai — Régie A">
+        <span data-i18n="plugin.avsync.text">Texte</span>
+        <input type="text" name="custom_text" data-i18n-ph="plugin.avsync.text_ph" placeholder="ex. Banc d'essai — Régie A">
       </label>
     </div>
   </div>
@@ -112,14 +114,16 @@
   <!-- ─── Police ─── redéploiement (embarque les octets d'une police de bibliothèque) ──── -->
   <div class="avs-sec">
     <div class="avs-sec-hd">
-      <span class="avs-sec-lbl">Police</span>
-      <span class="avs-sec-note">(redéploiement)</span>
+      <span class="avs-sec-lbl" data-i18n="plugin.avsync.sec_font">Police</span>
+      <span class="avs-sec-note" data-i18n="plugin.avsync.redeploy_note">(redéploiement)</span>
       <span class="avs-fb" data-group="font"></span>
-      <button class="btn btn-sm btn-blue avs-apply" data-group="font">Appliquer</button>
+      <button class="btn btn-sm btn-blue avs-apply" data-group="font" data-i18n="plugin.avsync.apply_redeploy"
+              data-i18n-title="plugin.avsync.apply_redeploy_title"
+              title="Recrée le conteneur : le signal est coupé le temps du redéploiement.">Appliquer et redéployer</button>
     </div>
     <div class="avs-row">
       <label class="avs-f avs-f-full">
-        <span>Police (habillage + timecode)</span>
+        <span data-i18n="plugin.avsync.font">Police (habillage + timecode)</span>
         <select class="ctl-select" name="font"></select>
       </label>
     </div>

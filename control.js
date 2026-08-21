@@ -13,6 +13,32 @@ window.MXLPlugins["avsync"] = {
     const esc = s => String(s == null ? '' : s)
       .replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
+    // ─── i18n (catalogue plugin.avsync.*, servi par l'orchestrateur) ─────────
+    // Le fragment HTML porte le FRANÇAIS en dur comme repli : si le catalogue manque, on lit du
+    // français, jamais une clé brute. On traduit le texte ET les attributs (title/aria/placeholder)
+    // — un libellé traduit au-dessus d'une infobulle française serait un demi-travail.
+    // `window.t` rend la CLÉ BRUTE quand elle est absente du catalogue (layout.html). Écrire ce
+    // retour sans le tester REMPLACERAIT le français du fragment par « plugin.avsync.beat » — le
+    // repli en dur ne servirait alors QUE le cas improbable où window.t n'existe pas, et raterait
+    // le cas réel (clé perdue/pas encore semée). D'où le test explicite : clé non résolue → on
+    // GARDE le texte déjà en place.
+    const T = (k, repli) => {
+      const v = window.t ? window.t(k) : k;
+      return (v && v !== k) ? v : (repli !== undefined ? repli : k);
+    };
+    const appliquerI18n = (root) => {
+      if (!window.t) return;
+      const attr = (sel, ds, lire, ecrire) => root.querySelectorAll(sel).forEach(n => {
+        const v = T(n.dataset[ds], lire(n));
+        if (v != null) ecrire(n, v);
+      });
+      attr('[data-i18n]',       'i18n',      n => n.textContent,                (n, v) => { n.textContent = v; });
+      attr('[data-i18n-title]', 'i18nTitle', n => n.title,                      (n, v) => { n.title = v; });
+      attr('[data-i18n-aria]',  'i18nAria',  n => n.getAttribute('aria-label'), (n, v) => n.setAttribute('aria-label', v));
+      attr('[data-i18n-ph]',    'i18nPh',    n => n.placeholder,                (n, v) => { n.placeholder = v; });
+    };
+    appliquerI18n(el);
+
     // ─── Live state ──────────────────────────────────────────────────────────
     const fpsEl   = $('.avs-fps-val');
     const fmtEl   = $('.avs-live-fmt');
@@ -161,7 +187,7 @@ window.MXLPlugins["avsync"] = {
         fillForm(s);
       } catch {
         if (fpsEl) fpsEl.textContent = '—';
-        if (fmtEl) fmtEl.textContent = 'container arrêté';
+        if (fmtEl) fmtEl.textContent = T('plugin.avsync.stopped');
       }
     }
 
@@ -204,6 +230,14 @@ window.MXLPlugins["avsync"] = {
       return val;
     }
 
+    // Application à chaud, avec anti-rafale. Un seul point d'entrée pour les deux sources :
+    // les dials (widgets maison, pas d'événement `change`) et les champs natifs.
+    const _tempo = {};
+    function _appliquerAChaud(group, delai) {
+      clearTimeout(_tempo[group]);
+      _tempo[group] = setTimeout(() => soumettre(group, null), delai || 0);
+    }
+
     // Initialiser les dials au chargement
     el.querySelectorAll('.avs-knob').forEach(k =>
       _setKnob(k, parseFloat(k.dataset.val)));
@@ -218,6 +252,7 @@ window.MXLPlugins["avsync"] = {
       if (!k || !isFinite(def)) return;
       _setKnob(k, def);
       if (k.dataset.name) _dirty.add(k.dataset.name);
+      _appliquerAChaud('av');
     });
 
     // Drag
@@ -249,6 +284,10 @@ window.MXLPlugins["avsync"] = {
       if (!_drag) return;
       try { _drag.k.releasePointerCapture(e.pointerId); } catch (_) {}
       _drag = null;
+      // Les dials sont des widgets maison : ils n'émettent PAS d'événement `change`, l'écoute
+      // déléguée plus bas ne les verrait donc jamais. On applique à la FIN du geste — pas
+      // pendant le glissé, qui enverrait cent requêtes pour un quart de tour.
+      _appliquerAChaud('av');
     });
 
     // Molette
@@ -259,6 +298,7 @@ window.MXLPlugins["avsync"] = {
       const step = _knobStep(k) * (e.shiftKey ? 5 : 1);
       _setKnob(k, parseFloat(k.dataset.val) + (e.deltaY < 0 ? step : -step));
       if (k.dataset.name) _dirty.add(k.dataset.name);
+      _appliquerAChaud('av', 400);   // rafale de molette → on applique quand elle s'arrête
     }, { passive: false });
 
     // Clavier (flèches)
@@ -329,34 +369,60 @@ window.MXLPlugins["avsync"] = {
     }
 
     // ─── Soumission ──────────────────────────────────────────────────────────
-    el.querySelectorAll('.avs-apply').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const group = btn.dataset.group;
-        const body  = collect(group);
-        if (!Object.keys(body).length) return;
-        btn.disabled = true;
-        try {
-          const r   = await fetch(`/api/containers/${vmid}/control/config`, {
-            method:  'POST',
-            headers: {'Content-Type': 'application/json'},
-            body:    JSON.stringify(body),
-          });
-          const res = await r.json();
-          if (!r.ok) {
-            feedback(group, res.error || `erreur ${r.status}`, false);
-          } else if (res.status === 'deploiement_en_cours') {
-            feedback(group, 'redéploiement…', true);
-            _clearDirty(group);
-          } else {
-            feedback(group, 'ok', true);
-            _clearDirty(group);   // ré-autoriser la synchro des champs appliqués
-          }
-        } catch {
-          feedback(group, 'réseau', false);
-        } finally {
-          btn.disabled = false;
+    // ─── Application ──────────────────────────────────────────────────────────
+    // DEUX RÉGIMES, et il ne faut surtout pas les confondre derrière un bouton unique :
+    //   · réglages À CHAUD (timing A/V, affichage) → AUCUN bouton, appliqués au `change`.
+    //     Un réglage qui n'a pas d'effet tant qu'on n'a pas cliqué ailleurs invite à l'erreur :
+    //     l'opérateur tourne un bouton, ne voit rien bouger, et recommence.
+    //   · réglages STRUCTURELS (format, police) → bouton EXPLICITE, qui dit qu'il redéploie.
+    //     Recréer le conteneur coupe un signal peut-être à l'antenne : le clic délibéré est une
+    //     confirmation, pas une gêne. C'est précisément ce qu'un « Appliquer » global aurait
+    //     effacé, en mettant un demi-décibel et une recréation de conteneur au même prix.
+    async function soumettre(group, ctrl) {
+      const body = collect(group);
+      if (!Object.keys(body).length) return;
+      if (ctrl) ctrl.disabled = true;
+      try {
+        const r = await fetch(`/api/containers/${vmid}/control/config`, {
+          method:  'POST',
+          headers: {'Content-Type': 'application/json'},
+          body:    JSON.stringify(body),
+        });
+        const res = await r.json();
+        if (!r.ok) {
+          feedback(group, res.error || `erreur ${r.status}`, false);
+        } else if (res.status === 'deploiement_en_cours') {
+          feedback(group, T('plugin.avsync.redeploying'), true);
+          _clearDirty(group);
+        } else {
+          feedback(group, 'ok', true);
+          _clearDirty(group);   // ré-autoriser la synchro des champs appliqués
         }
-      });
+      } catch {
+        feedback(group, T('plugin.avsync.network'), false);
+      } finally {
+        if (ctrl) ctrl.disabled = false;
+      }
+    }
+
+    // Structurels : le bouton reste, et son libellé dit la conséquence.
+    el.querySelectorAll('.avs-apply').forEach(btn => {
+      btn.addEventListener('click', () => soumettre(btn.dataset.group, btn));
+    });
+
+    // À chaud : application au `change`, sans bouton. `change` et non `input` — on applique
+    // quand la valeur est POSÉE (molette relâchée, champ quitté), pas à chaque frappe, sinon
+    // un texte de huit lettres partirait huit fois.
+    const _GROUPE_A_CHAUD = {av: 'av', disp: 'disp'};
+    el.addEventListener('change', (ev) => {
+      const t = ev.target;
+      if (!t || !t.closest) return;
+      if (t.closest('.avs-apply')) return;
+      const sec = t.closest('.avs-sec');
+      if (!sec) return;
+      const fb = sec.querySelector('.avs-fb[data-group]');
+      const g = fb && fb.dataset.group;
+      if (g && _GROUPE_A_CHAUD[g]) soumettre(g, null);
     });
   },
 

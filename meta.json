@@ -1,7 +1,15 @@
 {
-  "version": "0.21.2",
-  "date": "2026-08-12",
+  "version": "0.21.3",
+  "date": "2026-08-21",
   "changes": {
+    "Bandeaux-sonde réparés, et fin des « Appliquer » inutiles (0.21.3)": [
+      "Cocher « Bandeaux-sonde (mesure de latence) » puis Appliquer n'avait aucun effet : la case revenait décochée. Le hook `control_action` de l'orchestrateur filtre les réglages par LISTE BLANCHE (`_SOFT_KEYS`) et `probe_bands` n'y figurait pas — il n'était donc ni transmis au conteneur, ni persisté. L'interface, qui se relit depuis `/state`, retrouvait 0 et se décochait.",
+      "Le script du conteneur savait pourtant l'appliquer à chaud, et l'UI de contrôle savait l'envoyer : sur les trois côtés du contrat, seul le hook avait été oublié quand la fonction a été ajoutée. Vérifié de bout en bout : la bascule met à jour le conteneur ET la base, dans les deux sens, sans redéploiement.",
+      "Les deux sections appliquées À CHAUD (Timing A/V, Affichage) n'ont plus de bouton : le réglage part au relâchement du dial, à la molette qui s'arrête, ou quand on quitte un champ. Un réglage sans effet tant qu'on n'a pas cliqué ailleurs invite à l'erreur — on tourne, rien ne bouge, on recommence.",
+      "Les deux sections qui RECRÉENT le conteneur (Format, Police) gardent un bouton, désormais nommé « Appliquer et redéployer » : couper un signal peut-être à l'antenne mérite un clic délibéré. Un « Appliquer » global unique aurait mis un demi-décibel et une recréation de conteneur au même prix — c'est précisément ce qu'il fallait éviter.",
+      "Les dials sont des widgets maison qui n'émettent pas d'événement `change` : ils sont branchés sur la FIN du geste, et la molette sur une temporisation de 400 ms — sans quoi un quart de tour aurait envoyé cent requêtes.",
+      "Panneau de contrôle traduisible (FR/EN) : catalogue `i18n/{fr,en}.json` (clés `plugin.avsync.*`) appliqué au montage sur les textes ET les attributs — infobulles, placeholders, et libellés de lecteur d'écran, qui restaient français sans que personne puisse le voir. Le français demeure EN DUR dans le fragment comme repli : `window.t` rend la clé brute quand elle manque du catalogue, on teste donc le retour avant d'écrire, sinon un catalogue incomplet afficherait « plugin.avsync.beat » à l'écran."
+    ],
     "Bandeaux-sonde : mesurer la latence RÉELLE bande par bande (0.21.2)": [
       "Nouveau réglage « Bandeaux-sonde » (`probe_bands`, 0 = éteint par défaut, coût nul) : N bandeaux de 32 blocs binaires répartis sur la hauteur, portant l'INDEX DE GRAIN de la trame, LE NUMÉRO DE LA BANDE et un quartet de contrôle (XOR). Lus par le plugin « Sonde de latence ».",
       "POURQUOI PAS UN TIMECODE UNIQUE : un TC au centre confond trois situations que la chaîne produit réellement — grain vieux, bande pas encore écrite (flux tranché lu à la tête), grain mélangeant deux trames (réplication corrompue). Les trois donnent « un chiffre en retard ». Un bandeau PAR BANDE les sépare en une seule lecture : index par bande → âge réel ; deux index différents → déchirement.",

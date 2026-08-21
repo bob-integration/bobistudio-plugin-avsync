@@ -276,3 +276,7 @@
 
 .avs-fb.ok  { color: var(--status-running-fg); }
 .avs-fb.err { color: var(--status-stopped-fg); }
+
+/* Section appliquée à chaud : pas de bouton, on le DIT — sinon l'absence de bouton se lit
+   comme un oubli, et l'opérateur cherche où valider. */
+.avs-sec-live { font-style: italic; opacity: 0.75; }
