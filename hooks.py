@@ -4,8 +4,15 @@
 # Distribué sous licence GNU GPL v3 (ou ultérieure) ; voir le fichier LICENSE.
 
 _FORMAT_KEYS = frozenset(("width", "height", "fps", "chroma", "font"))
+# Clés appliquées À CHAUD (:8082/config), sans recréer le conteneur.
+# ⚠ Cette liste est une LISTE BLANCHE : une clé absente n'est ni transmise au conteneur NI
+# persistée — le réglage retombe donc silencieusement à sa valeur d'avant, et l'interface,
+# qui se relit depuis /state, « se décoche toute seule ». C'est arrivé à `probe_bands`
+# (bandeaux-sonde) : le script du conteneur savait l'appliquer à chaud, l'UI de contrôle savait
+# l'envoyer, seul ce hook ne le connaissait pas. Trois côtés du contrat, un seul oublié.
+# Toute nouvelle clé pilotable à chaud DOIT être ajoutée ici en même temps que l'UI.
 _SOFT_KEYS   = frozenset(("beat_sec", "flash_ms", "tone_hz", "show_brand", "custom_text",
-                          "tc_enable"))
+                          "tc_enable", "probe_bands"))
 
 
 def before_deploy(params, context):
