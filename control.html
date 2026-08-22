@@ -104,6 +104,22 @@
         <input type="checkbox" class="ctl-switch" name="probe_bands_on">
         <span data-i18n="plugin.avsync.probe_bands">Bandeaux-sonde (mesure de latence)</span>
       </label>
+      <label class="avs-f avs-f-full" data-i18n-title="plugin.avsync.audio_marque_title"
+             title="« Bip » : le bip 1 kHz historique — repère à l'oreille, mais deux bips sont indiscernables, donc un décalage d'une seconde entière est invisible. « Marque de mesure » : un chirp d'ancrage suivi de tons codant le numéro de battement, qui survit à une liaison comprimée et permet de mesurer l'écart A/V inter-site.">
+        <span data-i18n="plugin.avsync.audio_marque">Marque audio</span>
+        <select class="ctl-select" name="audio_marque">
+          <option value="bip" data-i18n="plugin.avsync.audio_marque_bip">Bip 1 kHz (repère à l'oreille)</option>
+          <option value="chirp" data-i18n="plugin.avsync.audio_marque_chirp">Marque de mesure (chirp + compteur)</option>
+        </select>
+      </label>
+      <label class="avs-f avs-f-full" data-i18n-title="plugin.avsync.probe_layout_title"
+             title="« Tranche » barre l'image de bandes pleine largeur : c'est le seul mode qui mesure la latence ligne par ligne et détecte un déchirement. « Bords » n'incruste que deux cartouches encadrés en haut et en bas, hors de la zone utile — image préservée, mais la mesure suppose que l'image arrive entière.">
+        <span data-i18n="plugin.avsync.probe_layout">Disposition des bandeaux</span>
+        <select class="ctl-select" name="probe_layout">
+          <option value="tranche" data-i18n="plugin.avsync.probe_layout_tranche">Tranche — pleine largeur, mesure ligne par ligne</option>
+          <option value="bords" data-i18n="plugin.avsync.probe_layout_bords">Bords — cartouches haut/bas, image préservée</option>
+        </select>
+      </label>
       <label class="avs-f avs-f-full">
         <span data-i18n="plugin.avsync.text">Texte</span>
         <input type="text" name="custom_text" data-i18n-ph="plugin.avsync.text_ph" placeholder="ex. Banc d'essai — Régie A">

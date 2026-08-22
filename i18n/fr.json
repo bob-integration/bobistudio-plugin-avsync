@@ -13,6 +13,10 @@
   "plugin.avsync.network": "réseau",
   "plugin.avsync.probe_bands": "Bandeaux-sonde (mesure de latence)",
   "plugin.avsync.probe_bands_title": "Incruste des bandeaux de blocs binaires répartis sur la hauteur, portant l'index de grain et le numéro de bande. Permet au plugin « Sonde de latence » de mesurer la latence RÉELLE et de détecter les grains déchirés. Modifiable à chaud, sans redéployer. Éteint par défaut.",
+  "plugin.avsync.probe_layout": "Disposition des bandeaux",
+  "plugin.avsync.probe_layout_title": "« Tranche » barre l'image de bandes pleine largeur : c'est le seul mode qui mesure la latence ligne par ligne et détecte un déchirement. « Bords » n'incruste que deux cartouches encadrés en haut et en bas, hors de la zone utile — image préservée, mais la mesure suppose que l'image arrive entière.",
+  "plugin.avsync.probe_layout_tranche": "Tranche — pleine largeur, mesure ligne par ligne",
+  "plugin.avsync.probe_layout_bords": "Bords — cartouches haut/bas, image préservée",
   "plugin.avsync.redeploy_note": "(redéploiement)",
   "plugin.avsync.redeploying": "redéploiement…",
   "plugin.avsync.resolution": "Résolution",
@@ -27,5 +31,9 @@
   "plugin.avsync.text": "Texte",
   "plugin.avsync.text_ph": "ex. Banc d'essai — Régie A",
   "plugin.avsync.tone": "Tonalité",
-  "plugin.avsync.tone_reset": "Remettre Tonalité à la valeur par défaut"
+  "plugin.avsync.tone_reset": "Remettre Tonalité à la valeur par défaut",
+  "plugin.avsync.audio_marque": "Marque audio",
+  "plugin.avsync.audio_marque_title": "« Bip » : le bip 1 kHz historique — repère à l'oreille, mais deux bips sont indiscernables, donc un décalage d'une seconde entière est invisible. « Marque de mesure » : un chirp d'ancrage suivi de tons codant le numéro de battement, qui survit à une liaison comprimée et permet de mesurer l'écart A/V inter-site.",
+  "plugin.avsync.audio_marque_bip": "Bip 1 kHz (repère à l'oreille)",
+  "plugin.avsync.audio_marque_chirp": "Marque de mesure (chirp + compteur)"
 }

@@ -138,6 +138,63 @@ TC_ENABLE = _as_bool(CONFIG.get("tc_enable"), default=False)
 # Bloc à 1 = blanc légal (235), à 0 = noir légal (16). Le contrôle rejette une bande à moitié
 # écrite ou mélangée, au lieu de rendre un index plausible mais faux.
 PROBE_BANDS = max(0, min(16, int(CONFIG.get("probe_bands") or 0)))
+# DISPOSITION DES BANDEAUX. « tranche » (défaut, historique) : N bandeaux répartis sur la hauteur
+# — seul mode capable de dire QUELLE bande décroche, donc de diagnostiquer un flux tranché.
+# « bords » : DEUX bandeaux seulement, aux extrémités, quand on postule l'image entière. La
+# couverture tombe de 71 % de la hauteur (16 × 48 px) à ~9 %, et le centre de l'image reste
+# regardable — c'est tout l'objet : pouvoir REGARDER ce qu'on mesure.
+#
+# ⚠ DEUX et pas un. Un mode qui postule l'image entière sans pouvoir VÉRIFIER le postulat
+# rendrait un âge plausible et faux le jour où le postulat tombe — exactement la panne qui a fait
+# retirer trois diagnostics le 2026-08-11. Deux bandeaux d'index concordants PROUVENT que l'image
+# n'est pas déchirée ; discordants, la sonde annonce « déchiré » au lieu d'un chiffre crédible.
+#
+# La disposition est portée par le NUMÉRO DE BANDE (haut = 0, bas = 15), pas par un réglage à
+# tenir synchronisé des deux côtés : un réglage se désynchronise et fait lire des positions vides
+# en silence. La sonde lit l'union des positions et laisse le numéro dire ce qu'elle regarde.
+PROBE_LAYOUT = "bords" if str(CONFIG.get("probe_layout") or "tranche").strip().lower() == "bords" else "tranche"
+# Fractions de hauteur des deux bandeaux de bord. 2 % et non 0 % : un peu de garde contre
+# l'overscan et le recadrage, sans empiéter sur l'image utile. Le même couple est codé en dur
+# dans la sonde — c'est un CONTRAT de format, comme les 32 blocs.
+PROBE_FRAC_BORDS = (0.10, 0.90)
+PROBE_BANDE_BAS = 15          # numéro réservé au bandeau du bas en mode « bords »
+# ── FORMAT DU CARTOUCHE (mode « bords ») — CONTRAT partagé avec plugins/sonde_latence ────────
+# Zone des BLOCS en fractions de largeur ; le libellé et le cadre vivent à gauche, en dehors.
+PROBE_ZONE_X = (0.135, 0.985)
+# Plancher de largeur de bloc À LA SOURCE. Le nombre de blocs en DÉCOULE : 32 blocs sur une
+# largeur réduite tombaient à 47 px (2,96 px sur un proxy 1/16, sous le plancher de 3,7 que
+# l'en-tête a fixé). En raccourcissant l'index — 24 bits = 93 h, très au-delà du besoin — on
+# libère des blocs et chacun s'élargit : 24 blocs font 68 px, soit PLUS que les 60 px du mode
+# pleine largeur. La robustesse augmente en même temps que la lisibilité de la tuile.
+PROBE_BLOC_MIN_PX = 60
+PROBE_FORMATS = (32, 24, 20)   # candidats, du plus riche au plus robuste (index 24/16/12 bits)
+PROBE_GARDE = 10               # garde cadre/pavé ↔ blocs : le décor n'entre JAMAIS dans la zone lue
+# Teinte (Cb, Cr) du fond du bandeau. Purement DÉCORATIVE : la donnée est en luma seul, donc
+# la chroma est libre et le décodeur n'en voit rien. C'est elle qui fait basculer la lecture de
+# « lignes corrompues » vers « élément d'interface » — sans coûter un pixel de largeur.
+PROBE_TEINTE = (150, 110)
+PROBE_LIBELLE = "SONDE"
+
+
+def _probe_nb_blocs(largeur_zone):
+    """Nombre de blocs tenant le plancher de largeur, sinon le format le plus robuste."""
+    for _nb in PROBE_FORMATS:
+        if largeur_zone / _nb >= PROBE_BLOC_MIN_PX:
+            return _nb
+    return PROBE_FORMATS[-1]
+
+
+def _probe_valeur(idx, band, nb):
+    """Mot de `nb` bits : index (nb−8 bits) · numéro de bande (4) · contrôle XOR (4).
+
+    Le contrôle porte sur TOUS les quartets au-dessus de lui — d'où (nb−4)/4 et non 7 en dur :
+    à 32 blocs on retrouve exactement l'ancien format, octet pour octet."""
+    _ib = nb - 8
+    _v = ((int(idx) & ((1 << _ib) - 1)) << 8) | ((band & 0xF) << 4)
+    _c = 0
+    for _q in range((nb - 4) // 4):
+        _c ^= (_v >> (4 * (_q + 1))) & 0xF
+    return _v | (_c & 0xF)
 PROBE_BLOCKS = 32
 # 48 px et pas 24 : un bandeau doit rester lisible sur les PROXIES de la pyramide, qui
 # descendent à 1/8 et 1/16. À 24 px il ne faisait plus que 3 px à 1/8 et tombait entre deux
@@ -403,6 +460,9 @@ def _tsize(txt, font):
 # Timecode : REMPLACE le compteur quand le générateur est actif (pas de doublon de chiffres).
 # Police ajustée au boot pour que hh:mm:ss:img tienne dans 90 % de la largeur.
 FONT_TC = _fit_font("00:00:00:00", HEIGHT // 5, int(WIDTH * 0.9))
+# Police du libellé de cartouche : dimensionnée sur la HAUTEUR DU BANDEAU, pas sur l'image —
+# FONT_TC fait HEIGHT//5 (216 px en 1080), sans rapport avec un bandeau de 48 px.
+FONT_SONDE = _font(max(10, int(PROBE_H * 0.55)))
 
 
 # ─── logo (base64 injecté au déploiement) ────────────────────────────────────
@@ -424,26 +484,128 @@ LOGO = _load_logo()
 
 
 # ─── overlay (logo + textes marque/format/perso), composé à la demande ──────
-def _build_imgs(show_brand, custom_text):
-    """Construit (img_black, img_white) avec l'overlay courant. Appelé au boot et
-    à chaud quand show_brand ou custom_text change."""
+def _probe_zones_reservees(layout=None, bands=None):
+    """Bandes de hauteur occupées par les cartouches (mode « bords »), garde et cadre compris.
+
+    L'habillage s'en sert pour NE PAS écrire dessous. En mode « tranche » il n'y a rien à éviter :
+    les bandeaux couvrent toute la hauteur par construction, et c'est le bandeau qui prime (il est
+    dessiné après, cf. le commentaire du site de dessin).
+
+    ⚠ Les arguments viennent de l'état VIVANT, jamais des constantes de démarrage : la disposition
+    et le nombre de bandeaux se changent à chaud. Lire `PROBE_LAYOUT` ici rendait l'esquive
+    inopérante dans le seul cas où elle sert — un conteneur démarré sans bandeaux, qu'on bascule
+    en « bords » pour faire une mesure. L'habillage restait alors sous le cartouche."""
+    layout = PROBE_LAYOUT if layout is None else layout
+    bands = int(PROBE_BANDS if bands is None else bands or 0)
+    if not bands:
+        return []
+    _bh = max(_CH, (PROBE_H // _CH) * _CH)
+    if layout == "bords":
+        _centres = [int(_f * HEIGHT) for _f in PROBE_FRAC_BORDS]
+    else:
+        # Mode tranche : mêmes centres que le site de dessin (`_pas`), sinon l'esquive viserait
+        # à côté — deux formules pour une seule vérité, c'est la façon habituelle de recréer
+        # exactement le défaut qu'on prétend corriger.
+        _pas = HEIGHT // bands
+        _centres = [_b * _pas + _pas // 2 for _b in range(bands)]
+    _z = []
+    for _yc in _centres:
+        _y0 = max(0, min(HEIGHT - _bh, _yc - _bh // 2))
+        _z.append((max(0, _y0 - PROBE_GARDE - 2), min(HEIGHT, _y0 + _bh + PROBE_GARDE + 2)))
+    return _z
+
+
+def _build_imgs(show_brand, custom_text, layout=None, bands=None):
+    """Construit (img_black, img_white) avec l'overlay courant. Appelé au boot et à chaud
+    quand show_brand, custom_text, la disposition des bandeaux ou leur nombre change."""
     ov = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
     d = ImageDraw.Draw(ov)
+    # ── L'habillage ESQUIVE les cartouches ────────────────────────────────────────────────
+    # Le logo et le bloc de marque tombaient sous le bandeau du haut, et le format sous celui du
+    # bas : le bandeau étant dessiné APRÈS, il les écrasait — on perdait l'information sans que
+    # rien ne le dise, et la bande y gagnait un fond illisible. On décale plutôt que d'empiler.
+    _zones = sorted(_probe_zones_reservees(layout, bands))
+
+    def _creneau(y, h, vers_le_bas=True):
+        """Descend (ou remonte) `y` jusqu'au premier créneau de hauteur `h` libre de bandeaux.
+
+        En « bords » il n'y a que deux zones et la première place libre est la bonne. En
+        « tranche » il y en a une par bandeau : ne regarder que la première laissait l'habillage
+        sous la deuxième. On balaie donc TOUTES les zones, et si aucune ne laisse la place
+        (bandeaux serrés, habillage haut) on rend la position d'origine — le bandeau est dessiné
+        après et prime, ce qui reste le comportement documenté, mais on aura essayé."""
+        for _ in range(len(_zones) + 1):
+            heurt = next(((a, b) for a, b in _zones if y < b and y + h > a), None)
+            if heurt is None:
+                return y
+            y = heurt[1] + 12 if vers_le_bas else heurt[0] - h - 12
+            if y < 0 or y + h > HEIGHT:
+                break
+        return None
+
+    # Créneaux LIBRES entre bandeaux, dans l'ordre de la hauteur.
+    _libres = []
+    _y = 0
+    for _a, _b in _zones:
+        if _a > _y:
+            _libres.append((_y, _a))
+        _y = max(_y, _b)
+    if _y < HEIGHT:
+        _libres.append((_y, HEIGHT))
+
+    _lignes = [ln for ln in (BRAND_NAME, BRAND_LOC) if ln] if show_brand else []
+    _h_txt = sum(_tsize(ln, FONT_MED)[1] + 6 for ln in _lignes)
+    _h_bloc = max(LOGO.height if LOGO is not None else 0, _h_txt)
+    _haut = 16
+    _compact = False
+    if _zones:
+        _place = _creneau(16, _h_bloc)
+        if _place is not None:
+            _haut = _place
+        else:
+            # ── Aucun créneau ne prend le bloc EMPILÉ ────────────────────────────────────
+            # C'est le cas nominal en « tranche » : 8 bandeaux sur 1080 laissent ~63 px, le bloc
+            # logo + deux lignes en fait ~90. Plutôt que de le laisser retomber SOUS une bande
+            # — le défaut qu'on corrige — on le met sur UNE ligne, logo mis à l'échelle du
+            # créneau. L'habillage devient discret, mais il reste lisible et entier.
+            # PREMIER créneau assez haut EN PARTANT DU HAUT — pas le plus grand : le plus
+            # grand est celui du bas, où va déjà le format, et les deux se superposaient.
+            # L'habillage appartient au coin haut-gauche ; il descend du minimum nécessaire.
+            _H_COMPACT = 44
+            _cands = [(a, b) for a, b in _libres if b - a >= _H_COMPACT and b > 16]
+            _a, _b = _cands[0] if _cands else (16, 16 + _H_COMPACT)
+            _dispo = _b - _a
+            _compact = True
+            _haut = _a + max(0, (_dispo - _H_COMPACT) // 2)
     tx = 16
-    if LOGO is not None:
-        ov.alpha_composite(LOGO, (16, 16))
-        tx = 16 + LOGO.width + 14
-    yy = 18
-    if show_brand:
-        for ln in (BRAND_NAME, BRAND_LOC):
-            if ln:
-                d.text((tx, yy), ln, font=FONT_MED, fill=(255, 255, 255, 235))
-                yy += _tsize(ln, FONT_MED)[1] + 6
+    _logo = LOGO
+    if _logo is not None and _compact:
+        _h = max(16, min(_logo.height, _dispo - 8))
+        if _h < _logo.height:
+            _logo = _logo.resize((max(1, int(_logo.width * _h / _logo.height)), _h), Image.LANCZOS)
+    if _logo is not None:
+        ov.alpha_composite(_logo, (16, _haut))
+        tx = 16 + _logo.width + 14
+    if _compact:
+        _txt = " — ".join(_lignes)
+        if _txt:
+            d.text((tx, _haut + 2), _txt, font=FONT_MED, fill=(255, 255, 255, 235))
+    else:
+        yy = _haut + 2
+        for ln in _lignes:
+            d.text((tx, yy), ln, font=FONT_MED, fill=(255, 255, 255, 235))
+            yy += _tsize(ln, FONT_MED)[1] + 6
     fh = _tsize(FORMAT_STR, FONT_MED)[1]
-    d.text((16, HEIGHT - fh - 16), FORMAT_STR, font=FONT_MED, fill=(170, 215, 255, 235))
+    _bas = HEIGHT - fh - 16
+    if _zones:
+        _bas = _creneau(_bas, fh, vers_le_bas=False) or _bas
+    d.text((16, _bas), FORMAT_STR, font=FONT_MED, fill=(170, 215, 255, 235))
     if custom_text:
         cw, ch = _tsize(custom_text, FONT_MED)
-        d.text(((WIDTH - cw) // 2, HEIGHT - ch - 16), custom_text, font=FONT_MED, fill=(255, 240, 170, 235))
+        _cy = HEIGHT - ch - 16
+        if _zones:
+            _cy = _creneau(_cy, ch, vers_le_bas=False) or _cy
+        d.text(((WIDTH - cw) // 2, _cy), custom_text, font=FONT_MED, fill=(255, 240, 170, 235))
     blk = Image.alpha_composite(Image.new("RGBA", (WIDTH, HEIGHT), (8, 8, 8, 255)), ov).convert("RGB")
     wht = Image.alpha_composite(Image.new("RGBA", (WIDTH, HEIGHT), (236, 236, 236, 255)), ov).convert("RGB")
     return blk, wht
@@ -534,23 +696,65 @@ def _render_into(vw, flash, sec, fis, bar_x, yuv_black=None, yuv_white=None,
     # ⚠ Bornes de blocs en FLOTTANT : 1920/32 = 60 px, soit 7,5 px sur un proxy 1/8 — une
     # largeur entière dérive d'un demi-pixel par bloc, deux blocs d'erreur en fin de bandeau.
     _pb = int(_live.get("probe_bands", PROBE_BANDS) or 0)
+    _lay = str(_live.get("probe_layout", PROBE_LAYOUT) or "tranche")
     if _pb and probe_idx is not None:
         _bh = max(_CH, (PROBE_H // _CH) * _CH)
-        _pas = HEIGHT // _pb
-        for _b in range(_pb):
-            _y0 = _b * _pas + (_pas - _bh) // 2
+        if _lay == "bords":
+            # Deux bandeaux CENTRÉS sur des fractions de hauteur → invariant à l'échelle, donc
+            # lisible aussi sur les proxies. Numéros 0 (haut) et 15 (bas) : c'est eux qui
+            # annoncent la disposition à la sonde.
+            _plan = [(int(f * HEIGHT), n)
+                     for f, n in zip(PROBE_FRAC_BORDS, (0, PROBE_BANDE_BAS))]
+        else:
+            _pas = HEIGHT // _pb
+            _plan = [(_b * _pas + _pas // 2, _b) for _b in range(_pb)]
+        # Zone des blocs et format : pleine largeur/32 en « tranche » (inchangé, aucun risque
+        # pour l'existant), cartouche à format dérivé de la largeur en « bords ».
+        if _lay == "bords":
+            _xa, _xb = int(PROBE_ZONE_X[0] * WIDTH), int(PROBE_ZONE_X[1] * WIDTH)
+            _nb = _probe_nb_blocs(_xb - _xa)
+        else:
+            _xa, _xb, _nb = 0, WIDTH, PROBE_BLOCKS
+        for _yc, _bn in _plan:
+            _y0 = _yc - _bh // 2
+            _y0 = max(0, min(HEIGHT - _bh, _y0))
             _y0 -= _y0 % _CH
             _y1 = min(HEIGHT, _y0 + _bh)
             if _y1 <= _y0:
                 continue
-            _val = ((int(probe_idx) & 0xFFFFFF) << 8) | ((_b & 0xF) << 4)
-            _ctl = 0
-            for _q in range(7):
-                _ctl ^= (_val >> (4 * (_q + 1))) & 0xF
-            _val |= _ctl & 0xF
-            for _k in range(PROBE_BLOCKS):
-                _x0, _x1 = int(_k * WIDTH / PROBE_BLOCKS), int((_k + 1) * WIDTH / PROBE_BLOCKS)
-                Y[_y0:_y1, _x0:_x1] = 235 if (_val >> (PROBE_BLOCKS - 1 - _k)) & 1 else 16
+            _val = _probe_valeur(probe_idx, _bn, _nb)
+            for _k in range(_nb):
+                _x0 = _xa + int(_k * (_xb - _xa) / _nb)
+                _x1 = _xa + int((_k + 1) * (_xb - _xa) / _nb)
+                Y[_y0:_y1, _x0:_x1] = 235 if (_val >> (_nb - 1 - _k)) & 1 else 16
+            if _lay != "bords":
+                continue
+            # ── DÉCOR (mode bords seulement) — jamais dans la zone lue ────────────────────
+            # La donnée est en LUMA seul ; la chroma est donc libre. On la teinte pour que la
+            # bande se lise comme un élément d'interface et non comme des lignes corrompues —
+            # coût de robustesse strictement nul, le décodeur ne regarde que le luma.
+            _cy0, _cy1 = _y0 // _CH, max(_y0 // _CH + 1, _y1 // _CH)
+            _cxa, _cxb = _xa // _CW, max(_xa // _CW + 1, _xb // _CW)
+            U[_cy0:_cy1, _cxa:_cxb] = PROBE_TEINTE[0]
+            V[_cy0:_cy1, _cxa:_cxb] = PROBE_TEINTE[1]
+            # Pavé du libellé ET cadre : encastrés avec la MÊME garde que les blocs, de sorte
+            # que le trait CONTOURNE le pavé au lieu de le coller — et qu'aucun élément de
+            # décor ne puisse jamais empiéter sur un bloc, même après redimensionnement.
+            _px0, _px1 = int(0.030 * WIDTH) + PROBE_GARDE, _xa - PROBE_GARDE
+            if _px1 > _px0:
+                Y[_y0:_y1, _px0:_px1] = 32
+                U[_cy0:_cy1, _px0 // _CW:max(_px0 // _CW + 1, _px1 // _CW)] = 128
+                V[_cy0:_cy1, _px0 // _CW:max(_px0 // _CW + 1, _px1 // _CW)] = 128
+            _fx0, _fx1 = int(0.030 * WIDTH), min(WIDTH, _xb + PROBE_GARDE + 2)
+            _fy0, _fy1 = max(0, _y0 - PROBE_GARDE - 2), min(HEIGHT, _y1 + PROBE_GARDE + 2)
+            for _ey0, _ey1 in ((_fy0, _fy0 + 2), (_fy1 - 2, _fy1)):
+                Y[_ey0:_ey1, _fx0:_fx1] = 200
+            for _ex0, _ex1 in ((_fx0, _fx0 + 2), (_fx1 - 2, _fx1)):
+                Y[_fy0:_fy1, _ex0:_ex1] = 200
+            try:
+                _blend_text(PROBE_LIBELLE, FONT_SONDE, _px0 + 14, _y0 + int(PROBE_H * 0.18))
+            except Exception:
+                pass
 
 
 
@@ -567,7 +771,77 @@ def _beep_chunks(flash_ms=None, tone_hz=None):
     inter = np.tile(w[:, None], (1, A_CHANNELS))                      # (nsamp, 8) float32
     return [inter[i * A_SPMS:(i + 1) * A_SPMS].copy() for i in range(n_ms)]   # blocs (48,8)
 
+# ─── MARQUE AUDIO « CHIRP + COMPTEUR » — instrument de mesure A/V inter-site ────────────────
+# Le bip historique est un sinus de 1 kHz, identique à chaque battement : ANONYME. Un retard de
+# transport supérieur à un demi-battement se lit alors faux d'un battement entier — 1,2 s devient
+# 0,2 s, un chiffre parfaitement crédible qu'on validerait sans sourciller. Il faut de l'identité
+# dans le son, sinon l'erreur est silencieuse ET vraisemblable.
+#
+# Structure, 60 ms par battement :
+#   ┌── chirp 20 ms, 1→4 kHz ──┬── ton 20 ms ──┬── ton 20 ms ──┐
+#   │  ANCRAGE : filtrage       │  6 bits = 64 valeurs         │
+#   │  adapté, pic net          │  → 64 s sans ambiguïté       │
+#
+# POURQUOI UN CHIRP ET NON UN SINUS pour dater : le front d'un sinus est étalé par le codec ; un
+# balayage se corrèle et donne un pic franc. Mesuré sur modèle durci (étalement MDCT + dérive
+# d'horloge) : dispersion 0,000 à 0,004 ms selon la liaison — le retard de groupe du codec, lui,
+# est un BIAIS CONSTANT, c'est-à-dire du vrai retard de transport, que l'instrument doit rapporter.
+#
+# POURQUOI DES TONS PURS pour l'identité : c'est ce qu'AAC et Opus préservent le mieux. Un LTC,
+# onde carrée FSK à spectre large, se délite à bas débit.
+MARQUE_CHIRP_MS = 20
+MARQUE_TON_MS   = 20
+MARQUE_F0 = 1000.0
+MARQUE_F1 = 4000.0
+# Huit fréquences : aucune n'est l'octave d'une autre à moins de 6 %, pour qu'une harmonique
+# engendrée par le codec ne puisse pas se faire passer pour un autre symbole.
+MARQUE_TONS = (800.0, 1030.0, 1330.0, 1710.0, 2200.0, 2830.0, 3200.0, 3650.0)
+MARQUE_MODULO = len(MARQUE_TONS) ** 2          # 64 battements avant répétition
+AUDIO_MARQUE = "chirp" if str(CONFIG.get("audio_marque") or "bip").strip().lower() == "chirp" else "bip"
+
+
+def _fondu(w, n=48):
+    """Fondu d'entrée/sortie court : évite un clic, que le codec transformerait en pré-écho."""
+    if len(w) > 2 * n:
+        r = np.linspace(0.0, 1.0, n)
+        w[:n] *= r
+        w[-n:] *= r[::-1]
+    return w
+
+
+def _marque_chirp(compteur):
+    """Blocs de 1 ms (48, 8) float32 : chirp d'ancrage puis deux tons portant `compteur`."""
+    t = np.arange(int(A_SAMPLE_RATE * MARQUE_CHIRP_MS / 1000)) / A_SAMPLE_RATE
+    _T = MARQUE_CHIRP_MS / 1000.0
+    w = np.sin(2 * np.pi * (MARQUE_F0 * t + (MARQUE_F1 - MARQUE_F0) / (2 * _T) * t ** 2))
+    # TROISIÈME CRÉNEAU = CONTRÔLE, somme des deux premiers modulo 8. Sans lui, un symbole mal
+    # lu rend un compteur FAUX ET PLAUSIBLE : on apparie la marque au mauvais battement et le
+    # retard sort faux d'une seconde entière, sans que rien ne le signale. Mesuré sur liaison
+    # très dégradée : 1 compteur sur 64 mal lu. Avec le contrôle, une lecture douteuse est
+    # REJETÉE — le détecteur dit « illisible » au lieu de rendre un nombre crédible.
+    _a, _b = compteur // len(MARQUE_TONS), compteur % len(MARQUE_TONS)
+    parts = [_fondu(w * 0.5)]
+    for _sl in (_a, _b, (_a + _b) % len(MARQUE_TONS)):
+        tt = np.arange(int(A_SAMPLE_RATE * MARQUE_TON_MS / 1000)) / A_SAMPLE_RATE
+        parts.append(_fondu(np.sin(2 * np.pi * MARQUE_TONS[_sl] * tt) * 0.5))
+    mono = np.concatenate(parts).astype(np.float32)
+    inter = np.tile(mono[:, None], (1, A_CHANNELS))
+    n_ms = len(mono) // A_SPMS
+    return [inter[i * A_SPMS:(i + 1) * A_SPMS].copy() for i in range(n_ms)]
+
+
+def _marques(mode=None):
+    """Liste indexée par (numéro de battement % len) → blocs de 1 ms.
+
+    En mode « bip » il n'y a qu'une entrée : le comportement historique, octet pour octet.
+    `mode` vient de l'état VIVANT — la marque se change à chaud, comme les bandeaux."""
+    if (AUDIO_MARQUE if mode is None else mode) == "chirp":
+        return [_marque_chirp(_c) for _c in range(MARQUE_MODULO)]
+    return [_beep_chunks()]
+
+
 BEEP = _beep_chunks()
+MARQUES = _marques()
 SILENCE = np.zeros((A_SPMS, A_CHANNELS), dtype=np.float32)
 BEAT_MS = max(1, int(round(BEAT_SEC * 1000)))
 
@@ -576,8 +850,8 @@ _live_lock = threading.Lock()
 _live = {{
     "beat_sec": BEAT_SEC, "flash_ms": int(FLASH_MS), "tone_hz": float(TONE_HZ),
     "show_brand": SHOW_BRAND, "custom_text": CUSTOM_TEXT, "tc_enable": TC_ENABLE,
-    "probe_bands": PROBE_BANDS,
-    "beep": BEEP, "beat_ms": BEAT_MS, "yuv_black": YUV_BLACK, "yuv_white": YUV_WHITE,
+    "probe_bands": PROBE_BANDS, "probe_layout": PROBE_LAYOUT, "audio_marque": AUDIO_MARQUE,
+    "beep": BEEP, "marques": MARQUES, "beat_ms": BEAT_MS, "yuv_black": YUV_BLACK, "yuv_white": YUV_WHITE,
 }}
 
 def _apply_live(patch):
@@ -588,8 +862,18 @@ def _apply_live(patch):
             _live["beat_ms"] = max(1, int(round(_live["beat_sec"] * 1000)))
         if "flash_ms" in patch or "tone_hz" in patch:
             _live["beep"] = _beep_chunks(_live["flash_ms"], _live["tone_hz"])
-        if "show_brand" in patch or "custom_text" in patch:
-            blk, wht = _build_imgs(_live["show_brand"], _live["custom_text"])
+        if "audio_marque" in patch or "flash_ms" in patch or "tone_hz" in patch:
+            # La marque de MESURE porte un compteur de battements ; le bip historique n'en porte
+            # aucun. Un consommateur qui reçoit le bip lit donc toujours « compteur 0 » et calcule
+            # un âge qui CROÎT indéfiniment — un chiffre faux et d'allure crédible. Recomposer ici
+            # est ce qui rend le mode réglable sans redéployer la mire de référence.
+            _live["marques"] = _marques(_live.get("audio_marque"))
+        # L'habillage dépend AUSSI de la sonde : changer la disposition déplace les cartouches,
+        # donc les zones que le logo et les textes doivent esquiver. Sans cette reconstruction,
+        # allumer les bandeaux à chaud laissait l'habillage à sa place de démarrage — sous la bande.
+        if any(k in patch for k in ("show_brand", "custom_text", "probe_layout", "probe_bands")):
+            blk, wht = _build_imgs(_live["show_brand"], _live["custom_text"],
+                                   _live.get("probe_layout"), _live.get("probe_bands"))
             _live["yuv_black"] = _base_planes(blk); _live["yuv_white"] = _base_planes(wht)
 
 
@@ -710,14 +994,31 @@ def audio_feeder():
     aw = bobimxl.AudioWriter(inst, AUDIO_SHM, channels=A_CHANNELS, sample_rate=A_SAMPLE_RATE)
     written_ms = 0
     _aclk = time.time if GENLOCK else time.monotonic
+    # ⚠ PHASE DES BATTEMENTS SUR LA GRILLE TAI, en mode « chirp » seulement.
+    # La phase était calée sur T0, l'instant de DÉMARRAGE de ce process — qu'aucun récepteur ne
+    # connaît. Le compteur de la marque ne suffisait donc pas à reconstruire l'instant d'émission :
+    # il faut une grille partagée, et TAI en est une. On capture ici le décalage entre `written_ms`
+    # et la milliseconde TAI absolue ; battement et phase s'en déduisent.
+    # Le mode « bip » garde EXACTEMENT son timing d'origine : c'est un instrument de mesure dont
+    # le calage flash/bip est délibérément figé, on n'y touche pas.
+    try:
+        _tai0_ms = bobimxl.now_tai() // 1_000_000 - int((_aclk() - T0) * 1000)
+    except Exception:
+        _tai0_ms = None
     while True:
         due = int((_aclk() - T0) * 1000)
         with _live_lock:
-            beat_ms = _live["beat_ms"]; beep = _live["beep"]
+            beat_ms = _live["beat_ms"]; marques = _live.get("marques") or [_live["beep"]]
         guard = 0
         while written_ms < due and guard < 2000:
-            phase_ms = written_ms % beat_ms
-            chunk = beep[phase_ms] if phase_ms < len(beep) else SILENCE
+            # Sur la grille TAI en mode chirp, sur T0 sinon (comportement historique).
+            _abs_ms = (written_ms + _tai0_ms) if (_tai0_ms is not None and len(marques) > 1) \
+                      else written_ms
+            phase_ms = _abs_ms % beat_ms
+            # La marque DÉPEND DU BATTEMENT : c'est elle qui porte le compteur, donc l'identité
+            # sans laquelle un retard supérieur à un demi-battement se lit faux d'un battement.
+            mk = marques[(_abs_ms // beat_ms) % len(marques)]
+            chunk = mk[phase_ms] if phase_ms < len(mk) else SILENCE
             try: aw.write(chunk)
             except Exception: pass
             written_ms += 1; guard += 1
@@ -751,6 +1052,8 @@ class ControlHandler(BaseHTTPRequestHandler):
                   "anc_shm": ANC_SHM if lv["tc_enable"] else None,   # générateur de timecode
                   "tc_enable": bool(lv["tc_enable"]),
                   "probe_bands": int(lv.get("probe_bands") or 0),
+                  "probe_layout": str(lv.get("probe_layout") or "tranche"),
+                  "audio_marque": str(lv.get("audio_marque") or "bip"),
                   "width": WIDTH, "height": HEIGHT, "fps": FPS, "chroma": CHROMA,
                   "format": FORMAT_STR,
                   "beat_sec": lv["beat_sec"], "flash_ms": lv["flash_ms"],
@@ -790,6 +1093,8 @@ class ControlHandler(BaseHTTPRequestHandler):
             # redéployer une mire qui est peut-être en train de servir de référence à un
             # relevé en cours. Borné comme au démarrage (0 = éteint, 16 max).
             "probe_bands": lambda v: max(0, min(16, int(v))),
+            "probe_layout": lambda v: ("bords" if str(v).strip().lower() == "bords" else "tranche"),
+            "audio_marque": lambda v: ("chirp" if str(v).strip().lower() == "chirp" else "bip"),
         }}
         patch = {{}}
         for k, cast in _validators.items():

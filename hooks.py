@@ -12,7 +12,8 @@ _FORMAT_KEYS = frozenset(("width", "height", "fps", "chroma", "font"))
 # l'envoyer, seul ce hook ne le connaissait pas. Trois côtés du contrat, un seul oublié.
 # Toute nouvelle clé pilotable à chaud DOIT être ajoutée ici en même temps que l'UI.
 _SOFT_KEYS   = frozenset(("beat_sec", "flash_ms", "tone_hz", "show_brand", "custom_text",
-                          "tc_enable", "probe_bands"))
+                          "tc_enable", "probe_bands", "probe_layout",
+                          "audio_marque"))
 
 
 def before_deploy(params, context):

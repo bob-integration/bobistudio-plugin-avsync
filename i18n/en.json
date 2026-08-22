@@ -13,6 +13,10 @@
   "plugin.avsync.network": "network",
   "plugin.avsync.probe_bands": "Probe bands (latency measurement)",
   "plugin.avsync.probe_bands_title": "Burns in bands of binary blocks spread over the height, carrying the grain index and the band number. Lets the “Latency probe” plugin measure REAL latency and detect torn grains. Can be changed while running, without redeploying. Off by default.",
+  "plugin.avsync.probe_layout": "Band layout",
+  "plugin.avsync.probe_layout_title": "“Slice” stripes the picture with full-width bands: it is the only mode that measures latency line by line and detects tearing. “Edges” burns in just two framed labels at top and bottom, outside the safe area — picture preserved, but the measurement assumes the frame arrives whole.",
+  "plugin.avsync.probe_layout_tranche": "Slice — full width, line-by-line measurement",
+  "plugin.avsync.probe_layout_bords": "Edges — top/bottom labels, picture preserved",
   "plugin.avsync.redeploy_note": "(redeploy)",
   "plugin.avsync.redeploying": "redeploying…",
   "plugin.avsync.resolution": "Resolution",
@@ -27,5 +31,9 @@
   "plugin.avsync.text": "Text",
   "plugin.avsync.text_ph": "e.g. Test bench — Gallery A",
   "plugin.avsync.tone": "Tone",
-  "plugin.avsync.tone_reset": "Reset Tone to its default value"
+  "plugin.avsync.tone_reset": "Reset Tone to its default value",
+  "plugin.avsync.audio_marque": "Audio mark",
+  "plugin.avsync.audio_marque_title": "“Beep”: the historic 1 kHz beep — audible cue, but two beeps are indistinguishable, so a delay of a whole second is invisible. “Measurement mark”: an anchor chirp followed by tones encoding the beat number, which survives a compressed link and lets you measure inter-site A/V skew.",
+  "plugin.avsync.audio_marque_bip": "1 kHz beep (audible cue)",
+  "plugin.avsync.audio_marque_chirp": "Measurement mark (chirp + counter)"
 }

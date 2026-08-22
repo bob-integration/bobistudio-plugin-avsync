@@ -120,7 +120,7 @@ window.MXLPlugins["avsync"] = {
     const GROUP_FIELDS = {
       fmt:  ['fmt_preset', 'chroma'],
       av:   [...el.querySelectorAll('.avs-knob[data-name]')].map(k => k.dataset.name),
-      disp: ['show_brand', 'custom_text', 'tc_enable', 'probe_bands_on'],
+      disp: ['show_brand', 'custom_text', 'tc_enable', 'probe_bands_on', 'probe_layout', 'audio_marque'],
       font: ['font'],
     };
     let _fmtLoaded = false;
@@ -166,6 +166,8 @@ window.MXLPlugins["avsync"] = {
       set('custom_text',s.custom_text);
       set('tc_enable',  s.tc_enable);
       set('probe_bands_on', (s.probe_bands || 0) > 0);
+      set('probe_layout', s.probe_layout);
+      set('audio_marque', s.audio_marque);
       if (!_fontLoaded && !_dirty.has('font')) {
         _fontLoaded = true;
         loadFontSelect(s.font);
@@ -351,6 +353,12 @@ window.MXLPlugins["avsync"] = {
       // poser : est-ce que je mesure, oui ou non. 8 est la valeur qui convient partout.
       const pbo = el.querySelector('[name="probe_bands_on"]');
       if (pbo) body.probe_bands = pbo.checked ? 8 : 0;
+      // Disposition : envoyée même bandeaux éteints — l'opérateur choisit le mode PUIS
+      // allume, et le script doit déjà connaître la disposition au moment de l'allumage.
+      const pl = el.querySelector('[name="probe_layout"]');
+      if (pl && pl.value) body.probe_layout = pl.value;
+      const am = el.querySelector('[name="audio_marque"]');
+      if (am && am.value) body.audio_marque = am.value;
       return body;
     }
 

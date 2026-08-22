@@ -8,7 +8,7 @@
     "class": "mode-corrector",
     "oklch": "0.80 0.05 110"
   },
-  "version": "0.21.3",
+  "version": "0.24.0",
   "description": "Générateur de test de synchronisation image/son : flash plein écran + bip synchrones, compteur, barre de balayage, et overlay personnalisable (logo entreprise, nom du système, localisation, format vidéo, texte libre).",
   "nav": {
     "section": "sources",
@@ -36,7 +36,9 @@
     "genlock": true,
     "tc_enable": false,
     "log_level": "info",
-    "probe_bands": 0
+    "probe_bands": 0,
+    "probe_layout": "tranche",
+    "audio_marque": "bip"
   },
   "config_schema": [
     {
@@ -204,6 +206,40 @@
       "min": 0,
       "max": 16,
       "default": 0
+    },
+    {
+      "key": "probe_layout",
+      "type": "select",
+      "label": "Disposition des bandeaux-sonde",
+      "help": "« Tranche » : les bandeaux occupent toute la largeur, répartis sur la hauteur — c'est ce qui permet de mesurer la latence LIGNE PAR LIGNE (un producteur en mode tranche livre le haut de l'image avant le bas) et de voir un déchirement. Intrusif : l'image est barrée de bandes. « Bords » : deux cartouches encadrés, en haut et en bas, hors de la zone utile — suppose que l'image arrive ENTIÈRE (pas de mesure sous-image, pas de détection de déchirement fiable), mais l'incrustation est discrète et lisible. À chaud.",
+      "options": [
+        {
+          "value": "tranche",
+          "label": "Tranche — pleine largeur, mesure ligne par ligne"
+        },
+        {
+          "value": "bords",
+          "label": "Bords — cartouches haut/bas, image préservée"
+        }
+      ],
+      "default": "tranche"
+    },
+    {
+      "key": "audio_marque",
+      "type": "select",
+      "label": "Marque audio",
+      "help": "« Bip » : le bip historique de 1 kHz au battement — repère à l'oreille, mais il ne porte AUCUNE information : deux bips sont indiscernables, donc un décalage d'une seconde entière est invisible. « Marque de mesure » : un chirp d'ancrage suivi de créneaux de tons codant le numéro de battement (64 avant répétition, avec somme de contrôle). C'est ce qui permet de dater l'audio à travers une liaison COMPRIMÉE, où aucun index de grain ne survit — donc de mesurer l'écart A/V inter-site. À chaud.",
+      "options": [
+        {
+          "value": "bip",
+          "label": "Bip 1 kHz (repère à l'oreille)"
+        },
+        {
+          "value": "chirp",
+          "label": "Marque de mesure (chirp + compteur de battements)"
+        }
+      ],
+      "default": "bip"
     }
   ],
   "wiring": {
@@ -301,6 +337,37 @@
         }
       },
       {
+        "label": "Sonde de latence",
+        "endpoint": "/config",
+        "fields": {
+          "probe_bands": {
+            "label": "Bandeaux-sonde (0 = éteint)",
+            "type": "number",
+            "min": 0,
+            "max": 16,
+            "default": 0
+          },
+          "probe_layout": {
+            "label": "Disposition",
+            "type": "enum",
+            "options": [
+              "tranche",
+              "bords"
+            ],
+            "default": "tranche"
+          },
+          "audio_marque": {
+            "label": "Marque audio",
+            "type": "enum",
+            "options": [
+              "bip",
+              "chirp"
+            ],
+            "default": "bip"
+          }
+        }
+      },
+      {
         "label": "Journal (diagnostic)",
         "endpoint": "/log_level",
         "fields": {
@@ -321,6 +388,67 @@
     ]
   },
   "actions": [
+    {
+      "id": "probe_bands",
+      "label": "Bandeaux-sonde (nombre, 0 = éteint)",
+      "endpoint": "/config",
+      "params": [
+        {
+          "key": "probe_bands",
+          "label": "Bandeaux",
+          "type": "number",
+          "min": 0,
+          "max": 16,
+          "default": 8
+        }
+      ],
+      "feedback": {
+        "state": "probe_bands",
+        "value_from": "probe_bands"
+      }
+    },
+    {
+      "id": "probe_layout",
+      "label": "Disposition des bandeaux-sonde",
+      "endpoint": "/config",
+      "params": [
+        {
+          "key": "probe_layout",
+          "label": "Disposition",
+          "type": "enum",
+          "options": [
+            "tranche",
+            "bords"
+          ],
+          "default": "tranche"
+        }
+      ],
+      "feedback": {
+        "state": "probe_layout",
+        "value_from": "probe_layout"
+      }
+    },
+    {
+      "id": "audio_marque",
+      "label": "Marque audio (bip ou marque de mesure)",
+      "endpoint": "/config",
+      "params": [
+        {
+          "key": "audio_marque",
+          "label": "Marque",
+          "type": "enum",
+          "options": [
+            "bip",
+            "chirp"
+          ],
+          "default": "bip"
+        }
+      ],
+      "feedback": {
+        "state": "audio_marque",
+        "value_from": "audio_marque"
+      }
+    },
     {
       "id": "beat",
       "label": "Régler la période du beat (s)",
