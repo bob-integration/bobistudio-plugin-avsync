@@ -1005,6 +1005,7 @@ def audio_feeder():
         _tai0_ms = bobimxl.now_tai() // 1_000_000 - int((_aclk() - T0) * 1000)
     except Exception:
         _tai0_ms = None
+    _idx_libre = [None]        # ancre du compteur contigu, mode « bip » seulement
     while True:
         due = int((_aclk() - T0) * 1000)
         with _live_lock:
@@ -1019,7 +1020,26 @@ def audio_feeder():
             # sans laquelle un retard supérieur à un demi-battement se lit faux d'un battement.
             mk = marques[(_abs_ms // beat_ms) % len(marques)]
             chunk = mk[phase_ms] if phase_ms < len(mk) else SILENCE
-            try: aw.write(chunk)
+            # ⚠ INDEX EXPLICITE ET CONTIGU — sans lui la marque est INÉCRIVABLE correctement.
+            # `AudioWriter.write(chunk)` sans index retombe sur `index_mode="tai"` et place le bloc
+            # « à l'instant présent ». Or cette boucle écrit ses blocs EN RAFALE pour rattraper
+            # l'horloge : plusieurs blocs de 1 ms atterrissent alors au même index, et les 80 ms
+            # d'une marque se retrouvent éparpillés. Mesuré le 2026-08-22 : la mire émettait
+            # ~4,2 marques par seconde au lieu d'une, espacées de ~200 ms, TOUTES PORTEUSES DU
+            # MÊME COMPTEUR — un consommateur ne peut alors pas savoir laquelle il a lue, d'où des
+            # écarts A/V faux de ±405 ms (deux créneaux) une fois sur deux.
+            # L'index dérive de la milliseconde TAI absolue : les écritures sont contiguës ET la
+            # phase de la marque est celle que le consommateur reconstruit. En mode « bip » (pas
+            # d'ancre TAI) on garde un compteur contigu, ce qui suffit — le bip ne porte pas
+            # d'identité de battement.
+            if _tai0_ms is not None:
+                _idx = _abs_ms * A_SPMS
+            else:
+                if _idx_libre[0] is None:
+                    _idx_libre[0] = written_ms * A_SPMS
+                _idx = _idx_libre[0]
+                _idx_libre[0] += A_SPMS
+            try: aw.write(chunk, index=_idx)
             except Exception: pass
             written_ms += 1; guard += 1
         time.sleep(0.003)

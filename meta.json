@@ -1,7 +1,13 @@
 {
-  "version": "0.24.0",
-  "date": "2026-08-22",
+  "version": "0.24.1",
+  "date": "2026-08-23",
   "changes": {
+    "La marque audio était écrite SANS index : elle sortait en cinq copies par battement (0.24.1)": [
+      "`AudioWriter.write(chunk)` sans index explicite retombe sur `index_mode=\"tai\"` et place le bloc « à l'instant présent ». Or `audio_feeder` écrit ses blocs de 1 ms EN RAFALE pour rattraper l'horloge : plusieurs atterrissaient au même index, et les 80 ms d'une marque se retrouvaient éparpillés sur le battement.",
+      "Mesuré avant correctif : 4,19 marques par seconde au lieu d'une, espacées de 178 à 230 ms, TOUTES PORTEUSES DU MÊME COMPTEUR (37, 37, 37, 38, 37…), phases dispersées sur cinq valeurs. Un consommateur ne pouvait pas savoir laquelle des copies il avait lue — d'où des écarts A/V faux de ±405 ms, soit deux créneaux, une fois sur deux.",
+      "Après : 0,91 marque/s, écarts de 1000,0 ms exactement, compteurs qui s'incrémentent (31, 32, 33…), phase invariable à l'échantillon près. Côté sonde, sur 60 s de chaîne locale à écart réel nul : 100 % de relevés aboutis (contre 30-83 %), zéro recalage, zéro aberrant, âge audio 0,00 ms constant. L'écart A/V résiduel de −20 ms est entièrement la quantification vidéo à la trame.",
+      "L'index dérive de la milliseconde TAI absolue : les écritures sont contiguës ET la phase de la marque est celle que le consommateur reconstruit. Le mode « bip » garde un compteur contigu simple — il ne porte pas d'identité de battement."
+    ],
     "Bandeaux-sonde : un mode « bords » peu intrusif, une marque audio, et le tout enfin pilotable (0.24.0)": [
       "Deux dispositions au choix pour les bandeaux-sonde. « Tranche » (inchangé, défaut) barre l'image de bandes pleine largeur : c'est le SEUL mode qui mesure la latence ligne par ligne et détecte un grain déchiré, parce qu'il faut un index lisible à plusieurs hauteurs pour cela. « Bords » incruste deux cartouches encadrés, à 10 % et 90 % de la hauteur, hors zone utile — l'image reste lisible, au prix de la mesure sous-image. Le cadre contourne le libellé au lieu de s'y coller, le nombre de blocs s'adapte à la résolution (32/24/20 selon la largeur), et l'habillage (logo, nom, lieu) esquive désormais les cartouches au lieu de passer dessous.",
       "Une marque de mesure dans l'AUDIO, pour l'écart A/V inter-site. Un bip de 1 kHz une fois par seconde ne permet pas de distinguer un décalage de 0 s d'un décalage de 1 s : la marque porte donc un compteur de battements codé sur des créneaux de tons (8 fréquences, chirp de 20 ms, 3ᵉ créneau de contrôle). Elle survit à un encodage, contrairement à un index de grain — c'est la seule information qui traverse une liaison comprimée.",
