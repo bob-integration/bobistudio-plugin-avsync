@@ -10,12 +10,7 @@
   },
   "version": "0.24.1",
   "description": "Générateur de test de synchronisation image/son : flash plein écran + bip synchrones, compteur, barre de balayage, et overlay personnalisable (logo entreprise, nom du système, localisation, format vidéo, texte libre).",
-  "nav": {
-    "section": "sources",
-    "label": "Sources",
-    "route": "/receiver_2110",
-    "order": 30
-  },
+  "nav": { "section": "sources", "label": "Sources", "route": "/sources", "order": 30, "group": "generateurs" },
   "ui": {
     "control_html": "control.html",
     "control_js": "control.js",
