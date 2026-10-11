@@ -309,6 +309,22 @@ def _grid_next(now_s, interval_s):
     import math as _m
     return (_m.floor(now_s / interval_s) + 1) * interval_s
 T0 = time.time() if GENLOCK else time.monotonic()   # origine partagée vidéo + audio
+# Ancre UNIQUE horloge système ↔ TAI, prise une fois et partagée par la vidéo ET l'audio : chacun
+# en prenait une à part (l'audio), ou aucune (la vidéo, qui calculait sa phase sur sa propre grille
+# `_grid_next` alors que l'image est rangée à l'index `next_index` de libmxl). Les deux grilles
+# tombaient sur le même créneau ou sur deux créneaux voisins SELON L'INSTANT DU DÉMARRAGE : la mire
+# sortait calée, ou le bip une trame avant le flash, et le restait jusqu'au redémarrage suivant.
+# Mesuré sur le bus le 2026-10-11 : −19,98 ms sur 5 flashs consécutifs, +1 ms au démarrage d'avant.
+try:
+    _RT_MINUS_TAI_S = time.time() - bobimxl.now_tai() / 1e9
+except Exception:
+    _RT_MINUS_TAI_S = None
+# Origine des battements SUR UNE FRONTIÈRE DE TRAME de la grille TAI : le flash ne peut paraître
+# qu'à une frontière, le bip part à la milliseconde ; une origine quelconque les séparait de 0 à
+# une période selon l'instant du démarrage (−2, −1, −16 ms sur trois démarrages, mesuré le 2026-10-11).
+if GENLOCK and _RT_MINUS_TAI_S is not None:
+    _p_ns = 1_000_000_000 * FPS_DEN // FPS_NUM
+    T0 = ((bobimxl.now_tai() // _p_ns) + 1) * _p_ns / 1e9 + _RT_MINUS_TAI_S
 
 
 def _rgb_to_yuv420(rgb):
@@ -915,6 +931,9 @@ def video_feeder():
             frame_k = w.next_index(lookahead=1)
             bobimxl.sleep_until_tai(w.index_time_ns(frame_k))
             now = _clk()
+            # Instant de présentation = celui de L'INDEX où l'image est rangée (cf. _RT_MINUS_TAI_S).
+            if _RT_MINUS_TAI_S is not None:
+                next_t = w.index_time_ns(frame_k) / 1e9 + _RT_MINUS_TAI_S
         else:
             now = _clk()
             if now < next_t:
@@ -1001,10 +1020,8 @@ def audio_feeder():
     # et la milliseconde TAI absolue ; battement et phase s'en déduisent.
     # Le mode « bip » garde EXACTEMENT son timing d'origine : c'est un instrument de mesure dont
     # le calage flash/bip est délibérément figé, on n'y touche pas.
-    try:
-        _tai0_ms = bobimxl.now_tai() // 1_000_000 - int((_aclk() - T0) * 1000)
-    except Exception:
-        _tai0_ms = None
+    # Même ancre que la vidéo (cf. _RT_MINUS_TAI_S) : l'instant TAI de T0, en ms.
+    _tai0_ms = int(round((T0 - _RT_MINUS_TAI_S) * 1000)) if (GENLOCK and _RT_MINUS_TAI_S is not None) else None
     _idx_libre = [None]        # ancre du compteur contigu, mode « bip » seulement
     while True:
         due = int((_aclk() - T0) * 1000)
@@ -1032,8 +1049,13 @@ def audio_feeder():
             # phase de la marque est celle que le consommateur reconstruit. En mode « bip » (pas
             # d'ancre TAI) on garde un compteur contigu, ce qui suffit — le bip ne porte pas
             # d'identité de battement.
+            # Index TOUJOURS sur la milliseconde TAI quand l'ancre existe, MÊME en mode « bip » : le
+            # mode bip fige le TIMING de la marque (phase sur T0), pas son adresse. Indexé sur T0, le
+            # flux audio comptait depuis le démarrage du process (3,4 jours d'écart avec la vidéo,
+            # mesuré le 2026-10-11) : un consommateur qui lit l'audio « à l'instant de la trame »
+            # — l'enregistreur — n'y trouvait rien.
             if _tai0_ms is not None:
-                _idx = _abs_ms * A_SPMS
+                _idx = (written_ms + _tai0_ms) * A_SPMS
             else:
                 if _idx_libre[0] is None:
                     _idx_libre[0] = written_ms * A_SPMS
