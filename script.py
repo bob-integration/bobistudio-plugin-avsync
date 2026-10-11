@@ -929,6 +929,19 @@ def video_feeder():
             # Le rattrapage d'un creux d'ordonnancement reste inclus (chaque appel repart de la
             # grille courante, cf. le `max` de bobimxl.next_index).
             frame_k = w.next_index(lookahead=1)
+            # ⚠ TÊTE ÉPINGLÉE DANS LE FUTUR. `next_index` est strictement croissant (max avec le
+            # cran précédent) : si l'horloge a SAUTÉ en avant un instant (nœud non synchronisé,
+            # pas d'horloge), le compteur reste calé sur l'index d'alors quand l'horloge revient —
+            # et ce producteur DORT jusqu'à lui. Constaté le 2026-10-11 sur dl360-1 (horloge
+            # « synchronized: no ») : tête vidéo ET audio à +1 600 s, plus aucune trame pendant
+            # ~27 min, enregistreur à 0 fps sans fichier, alors que le conteneur répond « running ».
+            # Au-delà de 2 s d'avance (la marge normale est d'UN créneau), on re-ancre sur la grille.
+            _ahead_ns = w.index_time_ns(frame_k) - bobimxl.now_tai()
+            if _ahead_ns > 2_000_000_000:
+                log("tête vidéo en avance de %.0f s sur la grille TAI (horloge qui a sauté ?) : "
+                    "re-ancrage sur la grille" % (_ahead_ns / 1e9), "warning")
+                w._counter = 0
+                frame_k = w.next_index(lookahead=1)
             bobimxl.sleep_until_tai(w.index_time_ns(frame_k))
             now = _clk()
             # Instant de présentation = celui de L'INDEX où l'image est rangée (cf. _RT_MINUS_TAI_S).
@@ -1028,6 +1041,13 @@ def audio_feeder():
         with _live_lock:
             beat_ms = _live["beat_ms"]; marques = _live.get("marques") or [_live["beep"]]
         guard = 0
+        # Même défaut que la vidéo : une horloge qui a sauté laisse `written_ms` en avance (ou très
+        # en retard) sur `due`, et l'audio se tait jusqu'à ce qu'elle le rattrape. Au-delà de 5 s
+        # d'écart on repart de l'horloge : un trou ou un recouvrement vaut mieux que des minutes de silence.
+        if abs(due - written_ms) > 5000:
+            log("audio : écart de %.0f s avec l'horloge (saut ?) : re-synchronisation"
+                % ((due - written_ms) / 1000.0), "warning")
+            written_ms = due
         while written_ms < due and guard < 2000:
             # Sur la grille TAI en mode chirp, sur T0 sinon (comportement historique).
             _abs_ms = (written_ms + _tai0_ms) if (_tai0_ms is not None and len(marques) > 1) \

@@ -1,7 +1,11 @@
 {
-  "version": "0.24.2",
+  "version": "0.24.3",
   "date": "2026-10-11",
   "changes": {
+    "Tête épinglée dans le futur après un saut d'horloge (0.24.3)": [
+      "★ Constaté le 2026-10-11 sur dl360-1 (horloge « synchronized: no ») : têtes vidéo ET audio à +1 600 s sur la grille, plus aucune trame pendant ~27 min, enregistreur en REC à 0 fps sans fichier — le conteneur répondait pourtant « running ». `next_index` étant strictement croissant, une horloge qui a sauté en avant puis est revenue laisse le compteur calé sur le futur, et le producteur DORT jusqu'à lui ; l'audio (`written_ms` contre l'horloge) se tait de même.",
+      "Désormais : au-delà de 2 s d'avance sur la grille TAI la vidéo se re-ancre (alerte « tête vidéo en avance… »), et l'audio se resynchronise sur l'horloge au-delà de 5 s d'écart. REDÉPLOIEMENT requis."
+    ],
     "★★ Mire calée par construction : flash et bip au même instant TAI (0.24.2)": [
       "★★ Le calage flash/bip DÉPENDAIT DE L'INSTANT DU DÉMARRAGE. La vidéo calculait sa phase sur sa propre grille (`_grid_next`, horloge système) alors que l'image est rangée à l'index `next_index` de libmxl : les deux tombaient sur le même créneau ou sur deux voisins. Et l'origine des battements (T0) était l'instant quelconque du démarrage, alors qu'un flash ne peut paraître qu'à une frontière de trame. Mesuré sur le bus (instant TAI du grain contre instant TAI de l'échantillon), sur des démarrages successifs : −19,98 · +1 · −1,98 · −0,98 · −15,98 ms. Désormais : ancre horloge système↔TAI UNIQUE partagée par la vidéo et l'audio, phase vidéo tirée de l'instant de l'index de l'image, origine posée sur une frontière de trame TAI → +0,02 ms sur trois démarrages.",
       "⚠ Les mesures A/V faites avec cette mire avant 0.24.2 portent cette erreur de 0 à −20 ms (à 50 i/s), FIXE pendant toute la vie du process et différente à chaque démarrage. Banc : `tools/bancs/banc_avsync_tai.py`.",
