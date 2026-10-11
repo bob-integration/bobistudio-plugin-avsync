@@ -928,7 +928,15 @@ def video_feeder():
             # rendu pour 20 ms de budget — donc pas un plafond de coût, un décalage d'index.
             # Le rattrapage d'un creux d'ordonnancement reste inclus (chaque appel repart de la
             # grille courante, cf. le `max` de bobimxl.next_index).
-            frame_k = w.next_index(lookahead=1)
+            # ⚠ L'index COURANT de la grille est ARRONDI au plus proche (mesuré 2026-10-11 sur r620-2 :
+            # une trame rendue 10,3 ms après son créneau voit déjà le créneau SUIVANT comme
+            # « courant »). `lookahead=1` visait alors DEUX créneaux plus loin : dès que le rendu
+            # dépasse la demi-période (10 ms à 50 i/s) la boucle sautait un créneau sur deux — 25,0 i/s
+            # sur les R620 (rendu 10,3-10,9 ms), 50 sur dl360-1 (< 10 ms). On vise donc le PREMIER
+            # créneau encore à venir : l'index courant s'il n'est pas échu, sinon le suivant.
+            frame_k = w.next_index(lookahead=0)
+            if w.index_time_ns(frame_k) <= bobimxl.now_tai():
+                frame_k = w.next_index(lookahead=1)
             # ⚠ TÊTE ÉPINGLÉE DANS LE FUTUR. `next_index` est strictement croissant (max avec le
             # cran précédent) : si l'horloge a SAUTÉ en avant un instant (nœud non synchronisé,
             # pas d'horloge), le compteur reste calé sur l'index d'alors quand l'horloge revient —

@@ -1,7 +1,11 @@
 {
-  "version": "0.24.3",
+  "version": "0.24.4",
   "date": "2026-10-11",
   "changes": {
+    "50 i/s tenus sur les R620 (0.24.4)": [
+      "★ L'avsync rendait 25,0 i/s sur les R620 pour 50 demandés (depuis 0.19.0, noté « plafond réel »). Ce n'était PAS un plafond de coût : l'index courant de la grille est ARRONDI au plus proche, donc une trame rendue plus de 10 ms (la demi-période) après son créneau voit déjà le créneau suivant comme « courant », et `next_index(lookahead=1)` visait deux créneaux plus loin — un créneau sur deux sauté. Rendu : 10,3-10,9 ms sur R620 (> 10), moins sur dl360-1 (donc 50 là). Désormais on vise le premier créneau encore à venir. Mesuré le 2026-10-11 sur r620-2 : 25,0 → 50,0 i/s.",
+      "Même piège probable ailleurs : tout producteur cadencé à `next_index(lookahead=1)` dont le travail dépasse la demi-période (stills ? player ?). À vérifier."
+    ],
     "Tête épinglée dans le futur après un saut d'horloge (0.24.3)": [
       "★ Constaté le 2026-10-11 sur dl360-1 (horloge « synchronized: no ») : têtes vidéo ET audio à +1 600 s sur la grille, plus aucune trame pendant ~27 min, enregistreur en REC à 0 fps sans fichier — le conteneur répondait pourtant « running ». `next_index` étant strictement croissant, une horloge qui a sauté en avant puis est revenue laisse le compteur calé sur le futur, et le producteur DORT jusqu'à lui ; l'audio (`written_ms` contre l'horloge) se tait de même.",
       "Désormais : au-delà de 2 s d'avance sur la grille TAI la vidéo se re-ancre (alerte « tête vidéo en avance… »), et l'audio se resynchronise sur l'horloge au-delà de 5 s d'écart. REDÉPLOIEMENT requis."
