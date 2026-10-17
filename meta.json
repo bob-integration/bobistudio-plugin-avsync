@@ -1,7 +1,10 @@
 {
-  "version": "0.24.4",
-  "date": "2026-10-11",
+  "version": "0.24.5",
+  "date": "2026-10-17",
   "changes": {
+    "Réglage « bandeaux-sonde » typé (0.24.5)": [
+      "`probe_bands` était déclaré « int », type que l'orchestrateur ne connaît pas : stocké en CHAÎNE, sans bornes, champ texte au formulaire. Déclaré « number » : bornes 0-16 appliquées à l'enregistrement. Le script le convertissait déjà ; rien ne change au rendu."
+    ],
     "50 i/s tenus sur les R620 (0.24.4)": [
       "★ L'avsync rendait 25,0 i/s sur les R620 pour 50 demandés (depuis 0.19.0, noté « plafond réel »). Ce n'était PAS un plafond de coût : l'index courant de la grille est ARRONDI au plus proche, donc une trame rendue plus de 10 ms (la demi-période) après son créneau voit déjà le créneau suivant comme « courant », et `next_index(lookahead=1)` visait deux créneaux plus loin — un créneau sur deux sauté. Rendu : 10,3-10,9 ms sur R620 (> 10), moins sur dl360-1 (donc 50 là). Désormais on vise le premier créneau encore à venir. Mesuré le 2026-10-11 sur r620-2 : 25,0 → 50,0 i/s.",
       "Même piège probable ailleurs : tout producteur cadencé à `next_index(lookahead=1)` dont le travail dépasse la demi-période (stills ? player ?). À vérifier."
