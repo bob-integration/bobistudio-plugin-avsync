@@ -65,7 +65,7 @@ window.MXLPlugins["avsync"] = {
     // ─── Chargement des formats depuis les réglages ───────────────────────────
     let _formats = [];
 
-    async function loadFmtSelect(currentW, currentH, currentFps) {
+    async function loadFmtSelect(currentW, currentH, currentFps, currentScan) {
       const presetSel = el.querySelector('[name="fmt_preset"]');
       if (!presetSel) return;
       try {
@@ -92,12 +92,15 @@ window.MXLPlugins["avsync"] = {
       // PREMIÈRE entrée de la palette (qui affichait un format mensonger, ex. 1080i50 pour
       // une mire 720p25).
       if (currentW && currentH && currentFps) {
+        // Le balayage départage « 1080i50 » de « 1080p50 » (même largeur, hauteur et cadence
+        // nominale) : sans lui, le premier des deux dans la palette était toujours affiché.
+        const scan = currentScan === 'i' ? 'i' : 'p';
         const idx = _formats.findIndex(f => f.w === currentW && f.h === currentH
-          && Math.round(f.fps) === Math.round(currentFps));
+          && Math.round(f.fps) === Math.round(currentFps) && (f.scan === 'i' ? 'i' : 'p') === scan);
         if (idx >= 0) presetSel.value = String(idx);
         else {
           presetSel.insertAdjacentHTML('afterbegin',
-            `<option value="cur">${esc(`${currentW}×${currentH} @${currentFps} (actuel)`)}</option>`);
+            `<option value="cur">${esc(`${currentW}×${currentH} @${currentFps}${scan} (actuel)`)}</option>`);
           presetSel.value = 'cur';
         }
       }
@@ -152,7 +155,7 @@ window.MXLPlugins["avsync"] = {
       // resynchronisé après un Appliquer du groupe fmt)
       if (!_fmtLoaded) {
         _fmtLoaded = true;
-        loadFmtSelect(s.width, s.height, s.fps).then(() => {
+        loadFmtSelect(s.width, s.height, s.fps, s.scan).then(() => {
           set('chroma', s.chroma || '422');
         });
       }
@@ -322,7 +325,7 @@ window.MXLPlugins["avsync"] = {
         const idx = parseInt(el.querySelector('[name="fmt_preset"]')?.value, 10);
         const f = _formats[idx];
         if (!f) return {};
-        const body = { width: f.w, height: f.h, fps: f.fps };
+        const body = { width: f.w, height: f.h, fps: f.fps, scan: f.scan === 'i' ? 'i' : 'p' };
         const ch = el.querySelector('[name="chroma"]');
         if (ch) body.chroma = ch.value;
         return body;

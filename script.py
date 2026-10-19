@@ -99,6 +99,23 @@ def _rate_nd(v):
     if abs(f - n) < 0.01: return (n or 25), 1
     nominal = round(f * 1001.0 / 1000.0); return nominal * 1000, 1001
 FPS_NUM, FPS_DEN = _rate_nd(CONFIG.get("fps") or 25)
+# ── BALAYAGE (0.24.6) : la mire sait sortir ENTRELACÉE (`scan` = p|i, `field_order` = tff|bff,
+# défaut par résolution : SD ≤576 lignes = BFF, sinon TFF). Avant, `scan` n'existait pas : un
+# préréglage « 1080i50 » donnait une sortie 1080p50, refusée au câblage d'une sortie 2110
+# entrelacée. CONVENTION DE LA CHAÎNE (palette, udc, moteur 2110) : un format entrelacé est réglé
+# à la cadence CHAMP (« 1080i50 » → fps=50) ; le flowDef, la grille et le rendu travaillent en
+# cadence TRAME (25). Le rendu reste par TRAME : les deux champs portent le même instant (trame
+# segmentée), ce qui garde le flash et le bip calés à la trame près, comme en progressif.
+FPS_NOMINAL = CONFIG.get("fps") or 25
+_SCAN_CH = {{"420": 2, "422": 1, "444": 1}}.get(str(CONFIG.get("chroma") or "422"), 1)
+INTERLACED = (str(CONFIG.get("scan") or "p").strip().lower().startswith("i")
+              and (HEIGHT // 2) % _SCAN_CH == 0)
+_fo = str(CONFIG.get("field_order") or "").strip().lower()
+FIELD_ORDER = _fo if _fo in ("tff", "bff") else ("bff" if HEIGHT <= 576 else "tff")
+SCAN = "i" if INTERLACED else "p"
+if INTERLACED and (FPS_NUM / FPS_DEN) > 30:
+    if FPS_NUM % 2 == 0: FPS_NUM //= 2     # 50/1 → 25/1
+    else:                FPS_DEN *= 2      # 60000/1001 → 30000/1001
 FPS    = max(1, round(FPS_NUM / FPS_DEN))
 BEAT_SEC = float(CONFIG.get("beat_sec") or 1.0) or 1.0
 FLASH_MS = int(CONFIG.get("flash_ms") or 60)
@@ -234,7 +251,8 @@ BRAND_LOC  = str(CONFIG.get("brand_location") or "")
 BRAND_ORG  = str(CONFIG.get("brand_org_name") or "")
 LOGO_B64   = CONFIG.get("brand_logo_b64") or ""
 
-FORMAT_STR = "%dx%d @%dp" % (WIDTH, HEIGHT, FPS)
+FORMAT_STR = ("%dx%d @%di" % (WIDTH, HEIGHT, FPS * 2)) if INTERLACED \
+    else ("%dx%d @%dp" % (WIDTH, HEIGHT, FPS))
 
 # ─── formats shm (identiques au pipeline MXL) ────────────────────────────────
 CHROMA = str(CONFIG.get("chroma") or "422")
@@ -271,8 +289,9 @@ def _out_slice_h(oh, ch=1):
             return sh
     return 0
 
-# Éligibilité tranche : la mire est toujours PROGRESSIVE → seule la divisibilité compte.
-V_SLICE_H = _out_slice_h(HEIGHT, _CH) if SLICE_MODE else 0
+# Éligibilité tranche : progressif seulement (l'entrelacé reste en image entière, règle de la
+# chaîne) ; en progressif, seule la divisibilité compte.
+V_SLICE_H = _out_slice_h(HEIGHT, _CH) if (SLICE_MODE and not INTERLACED) else 0
 _V_TOTAL_SLICES = (HEIGHT // V_SLICE_H) if V_SLICE_H else 1
 
 def _commit_sliced(w, gi):
@@ -285,6 +304,21 @@ def _commit_sliced(w, gi):
             w.commit(gi, valid_slices=k)   # réveille l'aval à chaque bande
     finally:
         w.commit(gi, valid_slices=None)
+
+# Plans d'une TRAME planar (taille du plan, octets par ligne) — pour l'éclatement en champs.
+_PLANES = ((Y_SIZE, WIDTH * _BPS), (UV_SIZE, UV_W * _BPS), (UV_SIZE, UV_W * _BPS))
+
+def _write_field(vw, src, parity):
+    """Copie le champ `parity` (0 = lignes paires) de la TRAME planar `src` (numpy uint8) dans la
+    vue du grain-champ `vw` : une copie stridée par plan (motif stills)."""
+    off = doff = 0
+    for (psz, rb) in _PLANES:
+        rows = psz // rb
+        frows = (rows - parity + 1) // 2
+        dst = vw[doff:doff + frows * rb]
+        if dst.size == frows * rb:
+            dst.reshape(frows, rb)[:] = src[off:off + psz].reshape(rows, rb)[parity::2]
+        off += psz; doff += frows * rb
 
 A_SAMPLE_RATE = 48000
 A_CHANNELS    = 8
@@ -897,8 +931,14 @@ def _apply_live(patch):
 def video_feeder():
     # MODE TRANCHE : le flowDef porte slice_height quand éligible (progressif + divisible) →
     # grain publié en N tranches égales ; sinon flowDef inchangé (historique octet-identique).
-    w = bobimxl.Writer(inst, VIDEO_SHM, WIDTH, HEIGHT, CHROMA, BIT_DEPTH, FPS_NUM, FPS_DEN,
-                       **({{"slice_height": V_SLICE_H}} if V_SLICE_H else {{}}))
+    # ENTRELACÉ : flowDef interlaced_tff|bff à la cadence TRAME → libmxl dimensionne chaque grain
+    # à 1 CHAMP ; on écrit 2 grains-champs par trame, aux index 2·trame et 2·trame+1.
+    _wkw = {{"slice_height": V_SLICE_H}} if V_SLICE_H else {{}}
+    if INTERLACED:
+        _wkw["interlace"] = "interlaced_" + FIELD_ORDER
+    w = bobimxl.Writer(inst, VIDEO_SHM, WIDTH, HEIGHT, CHROMA, BIT_DEPTH, FPS_NUM, FPS_DEN, **_wkw)
+    _frame = np.empty(V_FRAME_SIZE, dtype=np.uint8) if INTERLACED else None
+    _first = 1 if FIELD_ORDER == "bff" else 0
     if SLICE_MODE:
         log("slice_mode %s : sortie %s %s" % ("actif" if V_SLICE_H else "INÉLIGIBLE",
             VIDEO_SHM, ("tranchée par %d lignes (%d tranches)" % (V_SLICE_H, _V_TOTAL_SLICES))
@@ -989,17 +1029,28 @@ def video_feeder():
             tc = (_lt.tm_hour, _lt.tm_min, _lt.tm_sec, _fr)
             tc_txt = "%02d:%02d:%02d:%02d" % tc
         _t_r0 = time.monotonic_ns()
-        _i, _gi, _vw = w.open_grain(index=(frame_k if GENLOCK else None))
-        # Rendu 0.10.0 DIRECT dans le grain (zéro-copie) : memcpy du fond YUV précalculé +
-        # patchs barre/compteur — plus de conversion RGB→YUV pleine trame par-frame.
-        _render_into(_vw, flash, sec, fis, bar_x, yuv_b, yuv_w, tc_txt=tc_txt,
-                     probe_idx=_i)
-        if V_SLICE_H:
-            # MODE TRANCHE : commit progressif de la trame déjà rendue (bandes 1..N).
-            # Même index de grain, même media_ts, même phase flash/bip — seul le commit change.
-            _commit_sliced(w, _gi)
+        if INTERLACED:
+            # La trame est rendue hors grain, puis éclatée en deux champs au MÊME instant.
+            # La sonde porte l'index du 1er champ (coordonnée réelle du grain dans le flux).
+            _i = frame_k if GENLOCK else w.next_index()
+            _render_into(_frame, flash, sec, fis, bar_x, yuv_b, yuv_w, tc_txt=tc_txt,
+                         probe_idx=2 * _i)
+            for _fi, _par in ((2 * _i, _first), (2 * _i + 1, 1 - _first)):
+                _, _gf, _vf = w.open_grain(index=_fi)
+                _write_field(_vf, _frame, _par)
+                w.commit(_gf)
         else:
-            w.commit(_gi)
+            _i, _gi, _vw = w.open_grain(index=(frame_k if GENLOCK else None))
+            # Rendu 0.10.0 DIRECT dans le grain (zéro-copie) : memcpy du fond YUV précalculé +
+            # patchs barre/compteur — plus de conversion RGB→YUV pleine trame par-frame.
+            _render_into(_vw, flash, sec, fis, bar_x, yuv_b, yuv_w, tc_txt=tc_txt,
+                         probe_idx=_i)
+            if V_SLICE_H:
+                # MODE TRANCHE : commit progressif de la trame déjà rendue (bandes 1..N).
+                # Même index de grain, même media_ts, même phase flash/bip — seul le commit change.
+                _commit_sliced(w, _gi)
+            else:
+                w.commit(_gi)
         # Grain ANC du timecode, au MÊME index que la vidéo (paquet ATC RP 188, RFC 8331).
         # Cosmétique/diagnostic → ne jamais casser la cadence de la mire si l'écriture échoue.
         if tc_on and wa is not None and tc is not None:
@@ -1007,7 +1058,8 @@ def video_feeder():
                 _blob = bobimxl.anc_pack_rfc8331(
                     [{{"did": 0x60, "sdid": 0x60, "line": 9, "hori": 0xFFF,
                        "udw": bobimxl.anc_atc_encode(tc[0], tc[1], tc[2], tc[3])}}])
-                _ai, _agi, _avw = wa.open_grain(index=(frame_k if GENLOCK else None))
+                _ai, _agi, _avw = wa.open_grain(
+                    index=(frame_k if GENLOCK else (_i if INTERLACED else None)))
                 _src = np.frombuffer(_blob, dtype=np.uint8)
                 _n = min(_src.size, _avw.size)
                 _avw[:_n] = _src[:_n]
@@ -1020,7 +1072,10 @@ def video_feeder():
         _e = time.time() - win_start
         if _e >= 1.0:
             with metrics_lock:
-                metrics["fps"] = round(win_cnt / _e, 1); metrics["frame_index"] = idx
+                # Entrelacé : compté en CHAMPS (2 grains par trame), comme la cadence demandée
+                # (« 1080i50 » → fps=50) — sinon l'orchestrateur verrait un déficit de moitié.
+                metrics["fps"] = round(win_cnt * (2 if INTERLACED else 1) / _e, 1)
+                metrics["frame_index"] = idx
                 # own_latency_ms = coût PROPRE rendu+commit par frame (fenêtre glissante).
                 # Aucune attente de cadence/horloge dedans (convention capacité orchestrateur ;
                 # la mire est un générateur : pas de get_slice amont par construction).
@@ -1124,7 +1179,11 @@ class ControlHandler(BaseHTTPRequestHandler):
                   "probe_bands": int(lv.get("probe_bands") or 0),
                   "probe_layout": str(lv.get("probe_layout") or "tranche"),
                   "audio_marque": str(lv.get("audio_marque") or "bip"),
-                  "width": WIDTH, "height": HEIGHT, "fps": FPS, "chroma": CHROMA,
+                  "width": WIDTH, "height": HEIGHT, "chroma": CHROMA,
+                  # `fps` = cadence DEMANDÉE (champs en entrelacé, convention de la palette) :
+                  # c'est elle que l'interface compare aux préréglages.
+                  "fps": (FPS * 2) if INTERLACED else FPS,
+                  "scan": SCAN, "field_order": FIELD_ORDER if INTERLACED else "",
                   "format": FORMAT_STR,
                   "beat_sec": lv["beat_sec"], "flash_ms": lv["flash_ms"],
                   "tone_hz": lv["tone_hz"], "show_brand": lv["show_brand"],

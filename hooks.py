@@ -3,7 +3,7 @@
 # Auteur : Cyril Mazouer, pour le compte de BOBI SAS
 # Distribué sous licence GNU GPL v3 (ou ultérieure) ; voir le fichier LICENSE.
 
-_FORMAT_KEYS = frozenset(("width", "height", "fps", "chroma", "font"))
+_FORMAT_KEYS = frozenset(("width", "height", "fps", "scan", "field_order", "chroma", "font"))
 # Clés appliquées À CHAUD (:8082/config), sans recréer le conteneur.
 # ⚠ Cette liste est une LISTE BLANCHE : une clé absente n'est ni transmise au conteneur NI
 # persistée — le réglage retombe donc silencieusement à sa valeur d'avant, et l'interface,

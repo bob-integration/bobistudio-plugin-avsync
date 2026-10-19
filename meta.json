@@ -1,7 +1,12 @@
 {
-  "version": "0.24.5",
-  "date": "2026-10-17",
+  "version": "0.24.6",
+  "date": "2026-10-19",
   "changes": {
+    "La mire sait sortir en 50i (0.24.6)": [
+      "★ Choisir un format entrelacé (« HD 1080i50 ») donnait une mire 1080p50 : le script n'avait aucun réglage de balayage, et la page de contrôle n'envoyait que largeur, hauteur et cadence. Le câblage vers une sortie 2110 entrelacée était donc refusé (« écart de format : fps 50 ≠ 25, scan p ≠ i »).",
+      "Désormais `scan` (p | i) et `field_order` (tff | bff, défaut par résolution : SD = BFF, HD = TFF) : flux déclaré interlaced_tff|bff à la cadence TRAME, deux grains-champs par trame. Les deux champs portent le même instant (trame segmentée) : flash et bip restent calés à la trame près, comme en progressif. Cadence publiée en champs (50), comme demandée.",
+      "La page de contrôle tient compte du balayage pour reconnaître le préréglage en cours (1080i50 et 1080p50 ne se confondent plus). L'entrelacé reste en image entière (pas de mode tranche). REDÉPLOIEMENT requis (bouton du format). Garde : tests/verif_avsync_entrelace.py."
+    ],
     "Réglage « bandeaux-sonde » typé (0.24.5)": [
       "`probe_bands` était déclaré « int », type que l'orchestrateur ne connaît pas : stocké en CHAÎNE, sans bornes, champ texte au formulaire. Déclaré « number » : bornes 0-16 appliquées à l'enregistrement. Le script le convertissait déjà ; rien ne change au rendu."
     ],
