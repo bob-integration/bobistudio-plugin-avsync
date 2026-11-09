@@ -1,7 +1,10 @@
 {
-  "version": "0.24.6",
-  "date": "2026-10-19",
+  "version": "0.24.8",
+  "date": "2026-11-09",
   "changes": {
+    "Paquet audio = réglage du cœur (0.24.8)": [
+      "Le bip et la marque audio s'écrivaient par blocs de 48 échantillons figés (`A_SAMPLE_RATE // 1000`). La taille du paquet sur le bus est désormais le réglage du cœur `mxl_audio_grain_us` (Réglages → MXL), lu par `bobimxl.audio_grain` ; repli à 1 ms avec un orchestrateur ancien. `A_SPMS` ne sert plus qu'à convertir des millisecondes en échantillons. À 1 ms, aucun changement de comportement ni de calage."
+    ],
     "La mire sait sortir en 50i (0.24.6)": [
       "★ Choisir un format entrelacé (« HD 1080i50 ») donnait une mire 1080p50 : le script n'avait aucun réglage de balayage, et la page de contrôle n'envoyait que largeur, hauteur et cadence. Le câblage vers une sortie 2110 entrelacée était donc refusé (« écart de format : fps 50 ≠ 25, scan p ≠ i »).",
       "Désormais `scan` (p | i) et `field_order` (tff | bff, défaut par résolution : SD = BFF, HD = TFF) : flux déclaré interlaced_tff|bff à la cadence TRAME, deux grains-champs par trame. Les deux champs portent le même instant (trame segmentée) : flash et bip restent calés à la trame près, comme en progressif. Cadence publiée en champs (50), comme demandée.",

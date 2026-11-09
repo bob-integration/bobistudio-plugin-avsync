@@ -808,10 +808,12 @@ def _render_into(vw, flash, sec, fis, bar_x, yuv_black=None, yuv_white=None,
 
 
 
-# ─── bip audio : blocs de 1 ms pré-calculés (sinus float32 8ch) — flux MXL ──
+# ─── audio beep: pre-computed packets (float32 sine, 8ch) — MXL flux ──
 # Migration MXL Phase 3 : on produit des blocs float32 (n,8) normalisés [-1,1] au lieu de s24be ;
 # l'AudioWriter les écrit dans le flux MXL audio (bobimxl).
-A_SPMS = A_SAMPLE_RATE // 1000   # 48 samples = 1 ms
+A_SPMS = A_SAMPLE_RATE // 1000   # per-ms, not the bus grain
+# Audio packet size on the bus: core setting (Réglages → MXL). An older orchestrator has no helper: 1 ms.
+A_GRAIN = bobimxl.audio_grain(CONFIG, A_SAMPLE_RATE) if hasattr(bobimxl, "audio_grain") else 48
 def _beep_chunks(flash_ms=None, tone_hz=None):
     n_ms = max(1, int(flash_ms if flash_ms is not None else FLASH_MS))
     hz   = float(tone_hz if tone_hz is not None else TONE_HZ)
@@ -819,7 +821,7 @@ def _beep_chunks(flash_ms=None, tone_hz=None):
     t = np.arange(nsamp, dtype=np.float64) / A_SAMPLE_RATE
     w = (np.sin(2 * np.pi * hz * t) * 0.5).astype(np.float32)        # mono, niveau −6 dBFS
     inter = np.tile(w[:, None], (1, A_CHANNELS))                      # (nsamp, 8) float32
-    return [inter[i * A_SPMS:(i + 1) * A_SPMS].copy() for i in range(n_ms)]   # blocs (48,8)
+    return [inter[i * A_GRAIN:(i + 1) * A_GRAIN].copy() for i in range(nsamp // A_GRAIN)]   # packets (A_GRAIN,8)
 
 # ─── MARQUE AUDIO « CHIRP + COMPTEUR » — instrument de mesure A/V inter-site ────────────────
 # Le bip historique est un sinus de 1 kHz, identique à chaque battement : ANONYME. Un retard de
@@ -876,8 +878,7 @@ def _marque_chirp(compteur):
         parts.append(_fondu(np.sin(2 * np.pi * MARQUE_TONS[_sl] * tt) * 0.5))
     mono = np.concatenate(parts).astype(np.float32)
     inter = np.tile(mono[:, None], (1, A_CHANNELS))
-    n_ms = len(mono) // A_SPMS
-    return [inter[i * A_SPMS:(i + 1) * A_SPMS].copy() for i in range(n_ms)]
+    return [inter[i * A_GRAIN:(i + 1) * A_GRAIN].copy() for i in range(len(mono) // A_GRAIN)]
 
 
 def _marques(mode=None):
@@ -892,7 +893,7 @@ def _marques(mode=None):
 
 BEEP = _beep_chunks()
 MARQUES = _marques()
-SILENCE = np.zeros((A_SPMS, A_CHANNELS), dtype=np.float32)
+SILENCE = np.zeros((A_GRAIN, A_CHANNELS), dtype=np.float32)
 BEAT_MS = max(1, int(round(BEAT_SEC * 1000)))
 
 # ─── état live : params soft applicables à chaud via POST :8082/config ─────
@@ -1087,7 +1088,8 @@ def video_feeder():
 
 def audio_feeder():
     aw = bobimxl.AudioWriter(inst, AUDIO_SHM, channels=A_CHANNELS, sample_rate=A_SAMPLE_RATE)
-    written_ms = 0
+    written_ms = 0   # counted in bus packets (A_GRAIN samples); 1 ms each at the 1 ms grain
+    _pk_per_s = A_SAMPLE_RATE / float(A_GRAIN)
     _aclk = time.time if GENLOCK else time.monotonic
     # ⚠ PHASE DES BATTEMENTS SUR LA GRILLE TAI, en mode « chirp » seulement.
     # La phase était calée sur T0, l'instant de DÉMARRAGE de ce process — qu'aucun récepteur ne
@@ -1097,19 +1099,19 @@ def audio_feeder():
     # Le mode « bip » garde EXACTEMENT son timing d'origine : c'est un instrument de mesure dont
     # le calage flash/bip est délibérément figé, on n'y touche pas.
     # Même ancre que la vidéo (cf. _RT_MINUS_TAI_S) : l'instant TAI de T0, en ms.
-    _tai0_ms = int(round((T0 - _RT_MINUS_TAI_S) * 1000)) if (GENLOCK and _RT_MINUS_TAI_S is not None) else None
+    _tai0_ms = int(round((T0 - _RT_MINUS_TAI_S) * _pk_per_s)) if (GENLOCK and _RT_MINUS_TAI_S is not None) else None
     _idx_libre = [None]        # ancre du compteur contigu, mode « bip » seulement
     while True:
-        due = int((_aclk() - T0) * 1000)
+        due = int((_aclk() - T0) * _pk_per_s)
         with _live_lock:
-            beat_ms = _live["beat_ms"]; marques = _live.get("marques") or [_live["beep"]]
+            beat_ms = max(1, int(round(_live["beat_ms"] * _pk_per_s / 1000.0))); marques = _live.get("marques") or [_live["beep"]]
         guard = 0
         # Même défaut que la vidéo : une horloge qui a sauté laisse `written_ms` en avance (ou très
         # en retard) sur `due`, et l'audio se tait jusqu'à ce qu'elle le rattrape. Au-delà de 5 s
         # d'écart on repart de l'horloge : un trou ou un recouvrement vaut mieux que des minutes de silence.
-        if abs(due - written_ms) > 5000:
+        if abs(due - written_ms) > 5 * _pk_per_s:
             log("audio : écart de %.0f s avec l'horloge (saut ?) : re-synchronisation"
-                % ((due - written_ms) / 1000.0), "warning")
+                % ((due - written_ms) / _pk_per_s), "warning")
             written_ms = due
         while written_ms < due and guard < 2000:
             # Sur la grille TAI en mode chirp, sur T0 sinon (comportement historique).
@@ -1138,12 +1140,12 @@ def audio_feeder():
             # mesuré le 2026-10-11) : un consommateur qui lit l'audio « à l'instant de la trame »
             # — l'enregistreur — n'y trouvait rien.
             if _tai0_ms is not None:
-                _idx = (written_ms + _tai0_ms) * A_SPMS
+                _idx = (written_ms + _tai0_ms) * A_GRAIN
             else:
                 if _idx_libre[0] is None:
-                    _idx_libre[0] = written_ms * A_SPMS
+                    _idx_libre[0] = written_ms * A_GRAIN
                 _idx = _idx_libre[0]
-                _idx_libre[0] += A_SPMS
+                _idx_libre[0] += A_GRAIN
             try: aw.write(chunk, index=_idx)
             except Exception: pass
             written_ms += 1; guard += 1
