@@ -1,7 +1,10 @@
 {
-  "version": "0.24.8",
+  "version": "0.24.9",
   "date": "2026-11-09",
   "changes": {
+    "Version minimale du cœur déclarée (0.24.9)": [
+      "Le manifeste déclare `requires.core_min` = 0.9.14 : l'orchestrateur refuse de l'installer sur un cœur plus ancien et le dit. Valeur = le cœur avec lequel la version précédente a été faite. Rien ne change dans le conteneur : rien à redéployer."
+    ],
     "Paquet audio = réglage du cœur (0.24.8)": [
       "Le bip et la marque audio s'écrivaient par blocs de 48 échantillons figés (`A_SAMPLE_RATE // 1000`). La taille du paquet sur le bus est désormais le réglage du cœur `mxl_audio_grain_us` (Réglages → MXL), lu par `bobimxl.audio_grain` ; repli à 1 ms avec un orchestrateur ancien. `A_SPMS` ne sert plus qu'à convertir des millisecondes en échantillons. À 1 ms, aucun changement de comportement ni de calage."
     ],
